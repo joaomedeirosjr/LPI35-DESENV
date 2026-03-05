@@ -20,6 +20,8 @@ import AdminAthleteAnalyticsPage from "./AdminAthleteAnalyticsPage"
 import AdminAthleteRoundsPage from "./AdminAthleteRoundsPage"
 import AdminAthletePresencePage from "./AdminAthletePresencePage"
 
+import AdminGuests from "./AdminGuests"
+
 function MenuItem({ to, label }: { to: string; label: string }) {
   return (
     <NavLink
@@ -114,6 +116,7 @@ export default function AdminLayout() {
               <MenuItem to="/admin/seasons" label="Temporadas" />
               <MenuItem to="/admin/clubs" label="Clubes" />
               <MenuItem to="/admin/stages" label="Etapas" />
+              <MenuItem to="/admin/guests" label="Convidados" />
               <MenuItem to="/admin/rounds" label="Rodadas" />
               <MenuItem to="/admin/ranking" label="Ranking" />
               <MenuItem to="/admin/stage-participants" label="Participantes por Etapa" />
@@ -134,6 +137,7 @@ export default function AdminLayout() {
               <Route path="/seasons" element={<AdminSeasons />} />
               <Route path="/clubs" element={<AdminClubs />} />
               <Route path="/stages" element={<AdminStages />} />
+              <Route path="/guests" element={<AdminGuests />} />
               <Route path="/rounds" element={<AdminRounds />} />
               <Route path="/ranking" element={<AdminRanking />} />
               <Route path="/stage-participants" element={<AdminStageParticipants />} />
