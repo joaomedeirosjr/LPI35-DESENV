@@ -299,7 +299,7 @@ export default function AdminInvite() {
             </div>
 
             <div className='px-3 py-2 text-xs text-slate-400 border-t border-white/10'>
-              Revogar fica desabilitado quando o convite j? foi usado/expirou/est? revogado.
+              Revogar fica desabilitado quando o convite já foi usado/expirou/está revogado.
             </div>
           </div>
         )}
