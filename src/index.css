@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================= */
+/*  BASE (DARK)                  */
+/* ============================= */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-gripoBlue text-white;
+  }
+}
+
+/* ============================= */
+/*  COMPONENTS                   */
+/* ============================= */
+@layer components {
+  /* Inputs */
+  .input {
+    @apply w-full rounded-xl px-3 py-2
+           bg-white/10 text-white
+           border border-white/15
+           focus:outline-none
+           focus:ring-2 focus:ring-orange-400/30
+           focus:border-orange-400/50;
+  }
+
+  .input::placeholder {
+    @apply text-white/50;
+  }
+
+  /* Cards */
+  .card {
+    @apply bg-white/5 border border-white/10 rounded-2xl p-5;
+  }
+
+  /* Botão base (laranja) */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           px-4 py-2 rounded-xl transition
+           font-semibold
+           bg-orange-500 hover:bg-orange-600
+           text-white;
+  }
+
+  /* Primary (mantém laranja) */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           px-4 py-2 rounded-xl transition
+           font-semibold
+           bg-orange-500 hover:bg-orange-600
+           text-white;
+  }
+
+  /* ✅ Secondary (AZUL) — usar no "Confirmar" */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           px-4 py-2 rounded-xl transition
+           font-semibold
+           bg-sky-500 hover:bg-sky-600
+           text-white;
+  }
+
+  /* Ghost */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           px-4 py-2 rounded-xl transition
+           bg-white/5 hover:bg-white/10
+           text-white;
+  }
+
+  /* Danger */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-xl px-4 py-2 font-semibold transition;
+    background-color: #dc2626 !important;
+    color: #ffffff !important;
+  }
+  .btn-danger:hover {
+    background-color: #b91c1c !important;
+  }
+
+  /* Disabled (pra todos) */
+  .btn:disabled,
+  .btn-primary:disabled,
+  .btn-secondary:disabled,
+  .btn-ghost:disabled,
+  .btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+/* ============================= */
+/*   SELECT FIX DEFINITIVO       */
+/* ============================= */
+select.input {
+  appearance: auto;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+  color-scheme: dark;
+}
+
+select.input option {
+  background-color: #0b1220 !important;
+  color: #ffffff !important;
+}
+
+select.input optgroup {
+  background-color: #0b1220 !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* Fallback global */
+input,
+select,
+textarea {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(255, 165, 0, 0.6);
+  box-shadow: 0 0 0 3px rgba(255, 165, 0, 0.2);
+}
+
+/* ============================= */
+/*  MOBILE COMPACT TUNING        */
+/* ============================= */
+@media (max-width: 480px) {
+  @layer components {
+    .card {
+      @apply p-4;
+    }
+    .btn,
+    .btn-primary,
+    .btn-secondary,
+    .btn-ghost,
+    .btn-danger {
+      @apply px-3 py-2 text-sm;
+    }
+    .input {
+      @apply px-3 py-2 text-sm;
+    }
+  }
+}

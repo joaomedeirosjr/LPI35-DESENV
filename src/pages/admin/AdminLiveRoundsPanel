@@ -1,0 +1,427 @@
+import { useEffect, useMemo, useState } from "react"
+import { supabase } from "../../lib/supabase"
+
+type SeasonRow = { id: string; name: string | null; created_at?: string | null }
+type StageRow = {
+  id: number
+  name: string | null
+  season_id: string
+  status: string | null
+  club_id: string | null
+  stage_date: string | null
+}
+
+type RoundRow = { id: string; stage_id: number; created_at: string | null; mode: string | null }
+
+type MatchRow = {
+  match_id: string
+  round_id?: string
+  court_no: number | null
+  slot_no: number | null
+  status: string | null
+  team1: string | null
+  team2: string | null
+  score: any | null
+  updated_at: string | null
+}
+
+function fmtDT(s: string | null) {
+  if (!s) return "—"
+  try {
+    return new Date(s).toLocaleString("pt-BR")
+  } catch {
+    return s
+  }
+}
+
+function readScoreGames(m: any): { a: string; b: string } {
+  const s = m?.score ?? null
+  const a =
+    (s && (s.games_team1 ?? s.team1 ?? s.t1 ?? s.team1_score ?? null)) ??
+    m?.team1_score ??
+    null
+  const b =
+    (s && (s.games_team2 ?? s.team2 ?? s.t2 ?? s.team2_score ?? null)) ??
+    m?.team2_score ??
+    null
+
+  const na = a === null || a === undefined ? "" : String(Number(a))
+  const nb = b === null || b === undefined ? "" : String(Number(b))
+  return {
+    a: Number.isFinite(Number(na)) ? na : "",
+    b: Number.isFinite(Number(nb)) ? nb : "",
+  }
+}
+
+function normStatus(s: string | null | undefined) {
+  return String(s ?? "").toLowerCase()
+}
+
+function pct(part: number, total: number) {
+  if (!total) return 0
+  return Math.max(0, Math.min(100, Math.round((part / total) * 100)))
+}
+
+export default function AdminLiveRoundsPanel({
+  title = "Rodada ao Vivo",
+  dense = true,
+}: {
+  title?: string
+  dense?: boolean
+}) {
+  const [loading, setLoading] = useState(true)
+  const [matchesLoading, setMatchesLoading] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const [seasons, setSeasons] = useState<SeasonRow[]>([])
+  const [seasonId, setSeasonId] = useState<string>("")
+
+  const [stages, setStages] = useState<StageRow[]>([])
+  const [stageId, setStageId] = useState<number | null>(null)
+  const [stageStatus, setStageStatus] = useState<string | null>(null)
+
+  const [round, setRound] = useState<RoundRow | null>(null)
+  const [matches, setMatches] = useState<MatchRow[]>([])
+
+  async function loadSeasons() {
+    setErr(null)
+
+    const sRes = await supabase
+      .from("seasons")
+      .select("id,name,created_at")
+      .order("created_at", { ascending: false })
+
+    if (sRes.error) throw sRes.error
+
+    const sRows = (sRes.data ?? []) as SeasonRow[]
+    setSeasons(sRows)
+
+    const chosen = seasonId || (sRows[0]?.id ?? "")
+    setSeasonId(chosen)
+  }
+
+  async function loadStagesForSeason(pSeasonId: string) {
+    setErr(null)
+    setStages([])
+    setStageId(null)
+    setStageStatus(null)
+    setRound(null)
+    setMatches([])
+
+    if (!pSeasonId) return
+
+    const stRes = await supabase
+      .from("stages")
+      .select("id,name,season_id,status,club_id,stage_date")
+      .eq("season_id", pSeasonId)
+      .order("id", { ascending: false })
+
+    if (stRes.error) throw stRes.error
+
+    const rows = (stRes.data ?? []) as StageRow[]
+    setStages(rows)
+
+    const running = rows.find((x) => normStatus(x.status) === "running") ?? null
+    const chosenStage = running?.id ?? rows[0]?.id ?? null
+    setStageId(chosenStage)
+    setStageStatus(rows.find((x) => x.id === chosenStage)?.status ?? null)
+  }
+
+  async function loadLatestRoundAndMatches(pStageId: number) {
+    setErr(null)
+    setRound(null)
+    setMatches([])
+
+    const rRes = await supabase
+      .from("rounds")
+      .select("id,stage_id,created_at,mode")
+      .eq("stage_id", pStageId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+
+    if (rRes.error) throw rRes.error
+
+    const r0 = (rRes.data?.[0] ?? null) as any
+    if (!r0?.id) {
+      setRound(null)
+      setMatches([])
+      return
+    }
+
+    const rr: RoundRow = {
+      id: String(r0.id),
+      stage_id: Number(r0.stage_id),
+      created_at: r0.created_at ?? null,
+      mode: r0.mode ?? null,
+    }
+    setRound(rr)
+
+    await loadMatches(rr.id)
+  }
+
+  async function loadMatches(roundId: string) {
+    setMatchesLoading(true)
+    setErr(null)
+    try {
+      const { data, error } = await supabase.rpc("admin_list_round_matches", { p_round_id: roundId })
+      if (error) throw error
+
+      const rows = (data ?? []) as any[]
+      const mapped: MatchRow[] = rows.map((m) => ({
+        match_id: String(m.match_id ?? m.id),
+        round_id: String(m.round_id ?? roundId),
+        court_no: m.court_no ?? null,
+        slot_no: m.slot_no ?? null,
+        status: m.status ?? null,
+        team1: m.team1 ?? m.team1_label ?? null,
+        team2: m.team2 ?? m.team2_label ?? null,
+        score: m.score ?? null,
+        updated_at: m.updated_at ?? null,
+      }))
+
+      mapped.sort((a, b) => {
+        const ca = a.court_no ?? 0
+        const cb = b.court_no ?? 0
+        if (ca !== cb) return ca - cb
+        const sa = a.slot_no ?? 0
+        const sb = b.slot_no ?? 0
+        return sa - sb
+      })
+
+      setMatches(mapped)
+    } catch (e: any) {
+      setErr(e?.message ?? String(e))
+      setMatches([])
+    } finally {
+      setMatchesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    ;(async () => {
+      setLoading(true)
+      try {
+        await loadSeasons()
+      } catch (e: any) {
+        setErr(e?.message ?? String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    ;(async () => {
+      if (!seasonId) return
+      setLoading(true)
+      try {
+        await loadStagesForSeason(seasonId)
+      } catch (e: any) {
+        setErr(e?.message ?? String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [seasonId])
+
+  useEffect(() => {
+    ;(async () => {
+      if (!stageId) return
+      setLoading(true)
+      try {
+        const st = stages.find((x) => x.id === stageId) ?? null
+        setStageStatus(st?.status ?? null)
+        await loadLatestRoundAndMatches(stageId)
+      } catch (e: any) {
+        setErr(e?.message ?? String(e))
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [stageId, stages])
+
+  // realtime
+  useEffect(() => {
+    if (!round?.id) return
+
+    const ch = supabase
+      .channel(`admin-live-round:${round.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, () => {
+        if (!round?.id) return
+        loadMatches(round.id)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(ch)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round?.id])
+
+  const matchesByCourt = useMemo(() => {
+    const map: Record<string, MatchRow[]> = {}
+    for (const m of matches) {
+      const k = String(m.court_no ?? 0)
+      if (!map[k]) map[k] = []
+      map[k].push(m)
+    }
+    return map
+  }, [matches])
+
+  const courtKeys = useMemo(() => {
+    return Object.keys(matchesByCourt)
+      .map(Number)
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b)
+  }, [matchesByCourt])
+
+  const total = matches.length
+  const played = useMemo(() => matches.filter((m) => normStatus(m.status) === "played").length, [matches])
+  const progress = pct(played, total)
+
+  const stageIsRunning = normStatus(stageStatus) === "running"
+  const stageChip = stageIsRunning ? "Em andamento" : stageStatus ? stageStatus.toLowerCase() : "—"
+
+  return (
+    <div className={dense ? "space-y-3" : "space-y-5"}>
+      <div className="card">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-lg font-bold">{title}</div>
+            <div className="text-xs text-slate-300">
+              Progresso da rodada: <b>{played}</b>/<b>{total}</b> • <b>{progress}%</b> • Etapa: <b>{stageChip}</b>
+            </div>
+
+            {/* Barra de progresso */}
+            <div className="mt-3 h-2 w-full rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-2 rounded-full bg-emerald-500/60"
+                style={{ width: `${progress}%` }}
+                aria-label={`Progresso ${progress}%`}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col items-end gap-2">
+            <button
+              className="btn btn-secondary"
+              onClick={() => (round?.id ? loadMatches(round.id) : null)}
+              disabled={!round?.id || matchesLoading || loading}
+              title="Atualizar agora"
+            >
+              {matchesLoading ? "Atualizando..." : "Atualizar"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div>
+            <div className="text-xs text-slate-300 mb-1">Temporada</div>
+            <select
+              className="input"
+              value={seasonId}
+              onChange={(e) => setSeasonId(e.target.value)}
+              disabled={loading}
+            >
+              {seasons.length === 0 ? (
+                <option value="">(sem temporadas)</option>
+              ) : (
+                seasons.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name ?? s.id}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div>
+            <div className="text-xs text-slate-300 mb-1">Etapa</div>
+            <select
+              className="input"
+              value={stageId ? String(stageId) : ""}
+              onChange={(e) => setStageId(e.target.value ? Number(e.target.value) : null)}
+              disabled={loading || stages.length === 0}
+            >
+              {stages.length === 0 ? (
+                <option value="">(sem etapas)</option>
+              ) : (
+                stages.map((st) => (
+                  <option key={st.id} value={String(st.id)}>
+                    {st.name ?? `Etapa ${st.id}`} ({(st.status ?? "—").toLowerCase()})
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-slate-300">Rodada</div>
+            <div className="mt-1 text-sm">
+              <b>{round?.id ? round.id.slice(0, 8) : "—"}</b>
+              <span className="text-slate-300"> • </span>
+              <span className="text-slate-300">mode:</span> <b>{round?.mode ?? "—"}</b>
+            </div>
+            <div className="mt-1 text-xs text-slate-300">Atualiza em tempo real quando placar/status mudar.</div>
+          </div>
+        </div>
+
+        {err && (
+          <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-100">
+            <b>Erro:</b> {err}
+          </div>
+        )}
+      </div>
+
+      {!round?.id ? (
+        <div className="card text-slate-200">Nenhuma rodada encontrada para essa etapa.</div>
+      ) : total === 0 ? (
+        <div className="card text-slate-200">Nenhum jogo encontrado nessa rodada.</div>
+      ) : (
+        <div className="space-y-3">
+          {courtKeys.map((courtNo) => (
+            <div key={courtNo} className="card">
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-extrabold">Quadra {courtNo}</div>
+                <div className="text-xs text-slate-400">{matchesByCourt[String(courtNo)]?.length ?? 0} jogo(s)</div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {(matchesByCourt[String(courtNo)] ?? []).map((m) => {
+                  const { a, b } = readScoreGames(m)
+                  const isPlayed = normStatus(m.status) === "played"
+                  const scoreTxt = a !== "" && b !== "" ? `${a} x ${b}` : "—"
+
+                  return (
+                    <div key={m.match_id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs text-slate-300">
+                            Slot <b>{m.slot_no ?? "—"}</b> • Status:{" "}
+                            <span className={"font-semibold " + (isPlayed ? "text-emerald-300" : "text-slate-200")}>
+                              {m.status ?? "—"}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-base font-extrabold">
+                            {(m.team1 ?? "Time 1")} <span className="text-slate-400">x</span> {(m.team2 ?? "Time 2")}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-300">Atualizado: {fmtDT(m.updated_at)}</div>
+                        </div>
+
+                        <div className="shrink-0 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-center min-w-[140px]">
+                          <div className="text-xs text-slate-300">Placar</div>
+                          <div className="text-2xl font-extrabold">{scoreTxt}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

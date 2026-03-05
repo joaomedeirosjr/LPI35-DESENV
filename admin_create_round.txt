@@ -1,0 +1,97 @@
+# patch_fix_admin_create_round_signature.ps1
+# Ajusta AdminRounds.tsx para chamar admin_create_round com assinatura real:
+# admin_create_round(p_stage_id, p_round_no, p_name, p_mode, p_groups)
+
+$ErrorActionPreference = "Stop"
+
+function Die($msg) {
+  Write-Host ""
+  Write-Host "ERRO: $msg" -ForegroundColor Red
+  exit 1
+}
+
+$root = Get-Location
+$target = Join-Path $root "src\pages\admin\AdminRounds.tsx"
+if (-not (Test-Path $target)) { Die "Arquivo não encontrado: $target (rode dentro de C:\Projetos\LIGA35-DEV\liga35-admin)" }
+
+# Backup
+$backupDir = Join-Path $root "backups"
+if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir | Out-Null }
+$stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$backup = Join-Path $backupDir ("AdminRounds.tsx.bak_create_round_" + $stamp)
+Copy-Item $target $backup -Force
+Write-Host "Backup: $backup" -ForegroundColor DarkGray
+
+$content = Get-Content -LiteralPath $target -Raw -Encoding UTF8
+
+# 1) Ajusta o state do label (createRoundLabel) para "Nome" (opcional, mas ajuda)
+if ($content -match 'const \[createRoundLabel, setCreateRoundLabel\] = useState<string>\("Rodada 1"\)') {
+  # ok, mantém
+} elseif ($content -match 'const \[createRoundLabel, setCreateRoundLabel\] = useState<string>\("') {
+  # mantém qualquer valor
+} else {
+  Write-Host "Aviso: não encontrei createRoundLabel state (talvez seu arquivo esteja diferente). Vou seguir mesmo assim." -ForegroundColor Yellow
+}
+
+# 2) Substitui o miolo do createRound() para usar os nomes corretos.
+# Vamos trocar qualquer bloco que monte 'candidates' por uma chamada direta com os parâmetros certos.
+$pattern = '(?s)async function createRound\(\)\s*\{\s*.*?\n\s*\}\n'
+if ($content -notmatch $pattern) {
+  Die "Não encontrei a função createRound() no arquivo. Confirme se o card 'Criar Rodada' já foi aplicado."
+}
+
+$replacement = @'
+  async function createRound() {
+    if (stageId == null) {
+      setErr("Selecione uma etapa para criar a rodada.")
+      return
+    }
+
+    setCreatingRound(true)
+    setErr(null)
+    setMsg(null)
+
+    try {
+      const name = (createRoundLabel || "").trim() || "Rodada 1"
+      const roundNo = (rounds?.length ?? 0) + 1
+      const mode = createRoundMode
+
+      // assinatura REAL:
+      // admin_create_round(p_stage_id bigint, p_round_no integer, p_name text, p_mode round_mode, p_groups jsonb)
+      const params: any = {
+        p_stage_id: stageId,
+        p_round_no: roundNo,
+        p_name: name,
+        p_mode: mode,
+        p_groups: [] // começa vazio; você configura depois na aba Configuração
+      }
+
+      const { data, error } = await supabase.rpc("admin_create_round", params)
+      if (error) throw error
+
+      const createdId =
+        (typeof data === "string") ? data :
+        (data && typeof (data as any).id === "string") ? (data as any).id :
+        null
+
+      setMsg("Rodada criada com sucesso.")
+      await loadRounds(stageId)
+
+      // se RPC devolver UUID, seleciona automaticamente
+      if (createdId) setRoundId(createdId)
+    } catch (e: any) {
+      setErr(e?.message || String(e))
+    } finally {
+      setCreatingRound(false)
+    }
+  }
+
+'@
+
+$content = [regex]::Replace($content, $pattern, $replacement)
+
+Set-Content -LiteralPath $target -Value $content -Encoding UTF8
+
+Write-Host ""
+Write-Host "PATCH OK ✅ createRound() ajustado para assinatura real do admin_create_round." -ForegroundColor Green
+Write-Host "Agora: reinicie o Vite e teste /admin/rounds -> selecione ARENA TESTE -> Criar Rodada." -ForegroundColor Green

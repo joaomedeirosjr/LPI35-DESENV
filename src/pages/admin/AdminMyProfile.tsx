@@ -1,0 +1,85 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+
+export default function AdminMyProfile() {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [nome, setNome] = useState('')
+  const [email, setEmail] = useState('')
+
+  async function load() {
+    setLoading(true)
+    const { data: u } = await supabase.auth.getUser()
+    const user = u.user
+    if (!user) { setLoading(false); return }
+
+    setEmail(user.email ?? '')
+
+    const { data: prof, error } = await supabase
+      .from('profiles')
+      .select('nome, email')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (error) console.error(error)
+
+    setNome((prof?.nome ?? '').toString())
+    setLoading(false)
+  }
+
+  async function save() {
+    setSaving(true)
+
+    const { error } = await supabase.rpc('upsert_profile', {
+      p_nome: nome.trim(),
+      p_email: email.trim(),
+    })
+
+    setSaving(false)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+    alert('Perfil salvo!')
+    load()
+  }
+
+  useEffect(() => { load() }, [])
+
+  if (loading) return <div className='text-white'>Carregando...</div>
+
+  return (
+    <div className='space-y-4 text-white max-w-xl'>
+      <div>
+        <h1 className='text-2xl font-bold'>Meu Perfil</h1>
+        <p className='text-slate-300 text-sm'>Defina seu nome para aparecer nas aprova??es.</p>
+      </div>
+
+      <div className='card space-y-3'>
+        <div className='space-y-1'>
+          <label className='text-xs text-slate-300'>Nome</label>
+          <input
+            className='w-full p-2 rounded-xl bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-gripoOrange'
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder='Ex: Jo?o Medeiros'
+          />
+        </div>
+
+        <div className='space-y-1'>
+          <label className='text-xs text-slate-300'>Email</label>
+          <input
+            className='w-full p-2 rounded-xl bg-white/5 border border-white/10 outline-none opacity-80'
+            value={email}
+            readOnly
+          />
+        </div>
+
+        <button className='btn-primary w-full' onClick={save} disabled={saving}>
+          {saving ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
+    </div>
+  )
+}
