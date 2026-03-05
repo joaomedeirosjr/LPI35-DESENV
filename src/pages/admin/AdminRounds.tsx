@@ -48,17 +48,24 @@ type PendingScoreReport = {
 type TabKey = "config" | "gen" | "online"
 type CatKey = "A" | "B" | "C" | "D"
 
-function CatSelect(props: { value: string; onChange: (v: string) => void; options?: string[]; disabled?: boolean }) {
-  const opts = props.options ?? ["A", "B", "C", "D"]
+function CatSelect(props: {
+  value: CatKey
+  onChange: (v: CatKey) => void
+  options?: CatKey[]
+  disabled?: boolean
+}) {
+  const opts: CatKey[] = props.options ?? ["A", "B", "C", "D"]
   return (
     <select
       className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20 disabled:opacity-60"
       value={props.value}
-      onChange={(e) => props.onChange(e.target.value)}
+      onChange={(e) => props.onChange(e.target.value as CatKey)}
       disabled={props.disabled}
     >
       {opts.map((c) => (
-        <option key={c} value={c}>{c}</option>
+        <option key={c} value={c}>
+          {c}
+        </option>
       ))}
     </select>
   )

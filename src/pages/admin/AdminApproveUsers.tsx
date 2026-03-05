@@ -20,15 +20,14 @@ type ProfileRow = {
   category: Category | null
   birth_date: string | null
 
-  play_side: 'right' | 'left' | null}
+  play_side: 'right' | 'left' | null
+}
 
 function fmtDT(s?: string | null) {
   if (!s) return ''
   const d = new Date(s)
   return d.toLocaleString('pt-BR')
 }
-
-
 
 function formatIsoToBr(iso?: string | null) {
   if (!iso) return '(não informado)'
@@ -41,7 +40,6 @@ function formatPlaySide(v: 'right' | 'left' | null | undefined): string {
   if (!v) return '(não informado)'
   return v === 'right' ? 'Direito' : 'Esquerdo'
 }
-
 
 function parseBrToIso(br: string): { iso: string | null; error: string | null } {
   const raw = (br || '').trim()
@@ -58,7 +56,7 @@ function parseBrToIso(br: string): { iso: string | null; error: string | null } 
   if (mm < 1 || mm > 12) return { iso: null, error: 'Mês inválido.' }
   if (dd < 1 || dd > 31) return { iso: null, error: 'Dia inválido.' }
 
-  const iso = `${String(yyyy).padStart(4,'0')}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`
+  const iso = `${String(yyyy).padStart(4, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
 
   // valida data real (ex.: 31/02)
   const dt = new Date(iso + 'T00:00:00Z')
@@ -94,14 +92,14 @@ export default function AdminApproveUsers() {
   const [catValue, setCatValue] = useState<Category>('B')
   const [catReason, setCatReason] = useState('Definição inicial')
 
-
   // modal nascimento (admin)
   const [birthOpen, setBirthOpen] = useState(false)
   const [birthUser, setBirthUser] = useState<ProfileRow | null>(null)
   const [birthValue, setBirthValue] = useState('')
 
+  // modal lado (admin)
   const [sideOpen, setSideOpen] = useState(false)
-  const [sideUser, setSideUser] = useState<UserRow | null>(null)
+  const [sideUser, setSideUser] = useState<ProfileRow | null>(null)
   const [sideValue, setSideValue] = useState<'right' | 'left' | ''>('')
 
   // modal reprovar
@@ -121,7 +119,6 @@ export default function AdminApproveUsers() {
     setCatOpen(true)
   }
 
-
   function openBirth(u: ProfileRow) {
     setBirthUser(u)
     setBirthValue(formatIsoToBr(u.birth_date))
@@ -132,6 +129,12 @@ export default function AdminApproveUsers() {
     setRejUser(u)
     setRejReason('spam')
     setRejOpen(true)
+  }
+
+  function openSideModal(u: ProfileRow) {
+    setSideUser(u)
+    setSideValue((u.play_side || '') as any)
+    setSideOpen(true)
   }
 
   async function load() {
@@ -162,7 +165,7 @@ export default function AdminApproveUsers() {
       if (ids.length) {
         const { data: who, error: e2 } = await supabase
           .from('profiles')
-          .select('id,nome,play_side')
+          .select('id,nome')
           .in('id', ids)
 
         if (!e2 && who) {
@@ -218,7 +221,7 @@ export default function AdminApproveUsers() {
       .trim()
   }
 
-    function matchesFilters(u: ProfileRow) {
+  function matchesFilters(u: ProfileRow) {
     if (filterCategory && (u.category || '') !== filterCategory) return false
 
     if (onlyMissing) {
@@ -229,13 +232,15 @@ export default function AdminApproveUsers() {
 
     const q = norm(filterText)
     if (!q) return true
+
     const hay = norm(`${u.nome || ''} ${u.email || ''}`)
+    return hay.includes(q)
   }
 
+  const pendentesF = useMemo(() => pendentes.filter(matchesFilters), [pendentes, filterText, filterCategory, onlyMissing])
+  const aprovadosF = useMemo(() => aprovados.filter(matchesFilters), [aprovados, filterText, filterCategory, onlyMissing])
+  const reprovadosF = useMemo(() => reprovados.filter(matchesFilters), [reprovados, filterText, filterCategory, onlyMissing])
 
-  const pendentesF = pendentes.filter(matchesFilters)
-  const aprovadosF = aprovados.filter(matchesFilters)
-  const reprovadosF = reprovados.filter(matchesFilters)
   async function approveWithCategory() {
     if (!catUser) return
     setLoading(true)
@@ -297,7 +302,6 @@ export default function AdminApproveUsers() {
     }
   }
 
-
   async function saveBirthDate() {
     if (!birthUser) return
     setLoading(true)
@@ -325,15 +329,13 @@ export default function AdminApproveUsers() {
     }
   }
 
-  function openSideModal(u: UserRow) {
-    setSideUser(u)
-    setSideValue((u.play_side || '') as any)
-    setSideOpen(true)
-  }
-
   async function saveSide() {
     if (!sideUser) return
-    if (!sideValue) return setErr('Selecione o lado de jogo.')
+    if (!sideValue) {
+      setErr('Selecione o lado de jogo.')
+      return
+    }
+
     setLoading(true)
     setErr(null)
 
@@ -350,11 +352,16 @@ export default function AdminApproveUsers() {
       return
     }
 
-    // fecha e atualiza listagem
+    if (data !== true) {
+      setErr('Não foi possível salvar o lado de jogo (nenhuma linha afetada).')
+      setLoading(false)
+      return
+    }
+
     setSideOpen(false)
     setSideUser(null)
     setSideValue('')
-    await refresh()
+    await load()
     setLoading(false)
   }
 
@@ -383,46 +390,48 @@ export default function AdminApproveUsers() {
       {/* PENDENTES */}
       <section className='space-y-3'>
         <div className='card p-4 mb-3'>
-        <div className='text-sm font-semibold mb-3'>Filtros</div>
-        <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
-          <div>
-            <div className='text-xs text-slate-300 mb-1'>Buscar (nome/email)</div>
-            <input
-              className='w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2'
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder='Ex.: Romeu, joao@...'
-            />
-          </div>
-
-          <div>
-            <div className='text-xs text-slate-300 mb-1'>Categoria</div>
-            <select
-              className='w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2'
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value as any)}
-            >
-              <option value=''>Todas</option>
-              <option value='A'>A</option>
-              <option value='B'>B</option>
-              <option value='C'>C</option>
-              <option value='D'>D</option>
-            </select>
-          </div>
-
-          <div className='flex items-end'>
-            <label className='flex items-center gap-2 text-sm text-slate-200 select-none'>
+          <div className='text-sm font-semibold mb-3'>Filtros</div>
+          <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
+            <div>
+              <div className='text-xs text-slate-300 mb-1'>Buscar (nome/email)</div>
               <input
-                type='checkbox'
-                checked={onlyMissing}
-                onChange={(e) => setOnlyMissing(e.target.checked)}
+                className='w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2'
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                placeholder='Ex.: Romeu, joao@...'
               />
-              Somente faltando dados (Nascimento ou Lado)
-            </label>
+            </div>
+
+            <div>
+              <div className='text-xs text-slate-300 mb-1'>Categoria</div>
+              <select
+                className='w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2'
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value as any)}
+              >
+                <option value=''>Todas</option>
+                <option value='A'>A</option>
+                <option value='B'>B</option>
+                <option value='C'>C</option>
+                <option value='D'>D</option>
+              </select>
+            </div>
+
+            <div className='flex items-end'>
+              <label className='flex items-center gap-2 text-sm text-slate-200 select-none'>
+                <input
+                  type='checkbox'
+                  checked={onlyMissing}
+                  onChange={(e) => setOnlyMissing(e.target.checked)}
+                />
+                Somente faltando dados (Nascimento ou Lado)
+              </label>
+            </div>
           </div>
         </div>
-      </div>
-<div className='text-lg font-bold'>Pendentes</div>
+
+        <div className='text-lg font-bold'>Pendentes</div>
+
         {pendentesF.length === 0 ? (
           <div className='card text-slate-200'>Nenhum atleta pendente.</div>
         ) : (
@@ -465,7 +474,7 @@ export default function AdminApproveUsers() {
         )}
       </section>
 
-      {/* APROVADOS (cards são com nome + categoria) */}
+      {/* APROVADOS */}
       <section className='space-y-3'>
         <div className='text-lg font-bold'>Aprovados</div>
 
@@ -494,11 +503,17 @@ export default function AdminApproveUsers() {
                   </div>
 
                   <div className='shrink-0 flex flex-col items-end gap-2'>
-<button className='btn' onClick={() => openSetCategory(u)} disabled={loading}>Alterar Cat</button>
+                    <button className='btn' onClick={() => openSetCategory(u)} disabled={loading}>
+                      Alterar Cat
+                    </button>
                     <button className='btn btn-ghost' onClick={() => openBirth(u)} disabled={loading}>
                       Editar nascimento
                     </button>
-                    <button className='btn btn-ghost whitespace-nowrap !py-2 !px-4' onClick={() => openSideModal(u)} disabled={loading}>
+                    <button
+                      className='btn btn-ghost whitespace-nowrap !py-2 !px-4'
+                      onClick={() => openSideModal(u)}
+                      disabled={loading}
+                    >
                       Editar lado
                     </button>
                   </div>
@@ -538,8 +553,7 @@ export default function AdminApproveUsers() {
         )}
       </section>
 
-
-      {/* MODAL: EDITAR NASCIMENTO (ADMIN) */}
+      {/* MODAL: EDITAR NASCIMENTO */}
       {birthOpen && birthUser && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4'>
           <div className='w-full max-w-xl card'>
@@ -585,7 +599,7 @@ export default function AdminApproveUsers() {
         </div>
       )}
 
-      {/* MODAL: DEFINIR/ALTERAR CATEGORIA (aprovar também) */}
+      {/* MODAL: DEFINIR/ALTERAR CATEGORIA */}
       {catOpen && catUser && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4'>
           <div className='w-full max-w-xl card'>
@@ -688,7 +702,7 @@ export default function AdminApproveUsers() {
         </div>
       )}
 
-      {/* MODAL: EDITAR LADO DE JOGO (ADMIN) */}
+      {/* MODAL: EDITAR LADO DE JOGO */}
       {sideOpen && sideUser && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4'>
           <div className='w-full max-w-xl card p-4'>
@@ -735,7 +749,6 @@ export default function AdminApproveUsers() {
           </div>
         </div>
       )}
-
     </div>
   )
 }

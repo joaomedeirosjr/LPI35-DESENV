@@ -8,6 +8,10 @@ type StageRow = {
   status: string
   starts_on: string | null
   created_at: string
+
+  // ✅ adicionados (existem no SELECT e são usados no filtro openStages)
+  signup_open_at: string | null
+  signup_close_at: string | null
 }
 
 type MyParticipation = {
@@ -24,7 +28,7 @@ type MyProfileMini = {
 
 function fmtDateBR(v: string | null) {
   if (!v) return "-"
-  const d = new Date(v.length === 10 ? (v + "T00:00:00") : v)
+  const d = new Date(v.length === 10 ? v + "T00:00:00" : v)
   if (isNaN(d.getTime())) return v
   const pad = (n: number) => n.toString().padStart(2, "0")
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
@@ -75,10 +79,10 @@ export default function AthleteStages() {
       const { data: stagesData, error: stagesErr } = await supabase
         .from("stages")
         .select("id,name,stage_no,status,starts_on,created_at,signup_open_at,signup_close_at")
-                .order("created_at", { ascending: false })
+        .order("created_at", { ascending: false })
 
       if (stagesErr) throw new Error(stagesErr.message)
-      setStages((stagesData as StageRow[]) ?? [])
+      setStages(((stagesData as StageRow[]) ?? []) as StageRow[])
 
       const { data: myData, error: myErr } = await supabase
         .from("stage_participants")
@@ -91,7 +95,7 @@ export default function AthleteStages() {
         map[String(r.stage_id)] = {
           stage_id: r.stage_id,
           going: !!r.going,
-          responded_at: r.responded_at
+          responded_at: r.responded_at,
         }
       }
       setMine(map)
@@ -113,20 +117,38 @@ export default function AthleteStages() {
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    void load()
+  }, [])
 
   function pillFor(my?: MyParticipation) {
-    if (!my) return <span className="text-xs px-2 py-1 rounded-full bg-white/10 border border-white/10">Sem resposta</span>
-    if (my.going) return <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 border border-green-400/30">Confirmado</span>
-    return <span className="text-xs px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-400/30">Recusado</span>
+    if (!my)
+      return (
+        <span className="text-xs px-2 py-1 rounded-full bg-white/10 border border-white/10">
+          Sem resposta
+        </span>
+      )
+    if (my.going)
+      return (
+        <span className="text-xs px-2 py-1 rounded-full bg-green-500/10 border border-green-400/30">
+          Confirmado
+        </span>
+      )
+    return (
+      <span className="text-xs px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-400/30">
+        Recusado
+      </span>
+    )
   }
 
   async function setGoing(stageId: any, going: boolean) {
     const current = mine[String(stageId)]
     if (current && current.going === going) {
-      showNotice(going ? "ok" : "warn", going
-        ? "Você já confirmou presença nesta etapa."
-        : "Você já marcou que não vai participar desta etapa."
+      showNotice(
+        going ? "ok" : "warn",
+        going
+          ? "Você já confirmou presença nesta etapa."
+          : "Você já marcou que não vai participar desta etapa."
       )
       return
     }
@@ -136,7 +158,7 @@ export default function AthleteStages() {
     try {
       const { error } = await supabase.rpc("set_stage_participation", {
         p_stage_id: stageId,
-        p_going: going
+        p_going: going,
       })
       if (error) {
         const msg = (error.message || "").toLowerCase()
@@ -148,8 +170,8 @@ export default function AthleteStages() {
 
       await load()
 
-      if (going) showNotice("ok", "Obrigado pela confirmação  você confirmou presença nesta etapa.")
-      else showNotice("warn", "Obrigado pela confirmação  você recusou a inscrição desta etapa.")
+      if (going) showNotice("ok", "Obrigado pela confirmação — você confirmou presença nesta etapa.")
+      else showNotice("warn", "Obrigado pela confirmação — você recusou a inscrição desta etapa.")
     } catch (e: any) {
       const msg = e?.message ?? String(e)
       setError(msg)
@@ -160,7 +182,10 @@ export default function AthleteStages() {
   }
 
   function btnClass(active: boolean) {
-    return "btn-ghost " + (active ? " ring-2 ring-gripoOrange/60 bg-gripoOrange/15 border border-gripoOrange/40" : "")
+    return (
+      "btn-ghost " +
+      (active ? " ring-2 ring-gripoOrange/60 bg-gripoOrange/15 border border-gripoOrange/40" : "")
+    )
   }
 
   return (
@@ -168,7 +193,9 @@ export default function AthleteStages() {
       <div className="card">
         <div className="text-lg font-bold">Etapas com inscrições abertas</div>
         <div className="text-xs text-slate-300">Marque sua participação (vou / não vou).</div>
-        <div className="mt-2 text-sm">Sua categoria: <b>{myCategory}</b></div>
+        <div className="mt-2 text-sm">
+          Sua categoria: <b>{myCategory}</b>
+        </div>
       </div>
 
       {myCategory === "-" && (
@@ -178,12 +205,16 @@ export default function AthleteStages() {
       )}
 
       {notice && (
-        <div className={
-          "card border " +
-          (noticeKind === "ok" ? "border-green-400/40 bg-green-500/10"
-            : noticeKind === "warn" ? "border-yellow-400/40 bg-yellow-500/10"
-            : "border-red-400/40 bg-red-500/10")
-        }>
+        <div
+          className={
+            "card border " +
+            (noticeKind === "ok"
+              ? "border-green-400/40 bg-green-500/10"
+              : noticeKind === "warn"
+              ? "border-yellow-400/40 bg-yellow-500/10"
+              : "border-red-400/40 bg-red-500/10")
+          }
+        >
           {notice}
         </div>
       )}
@@ -198,7 +229,7 @@ export default function AthleteStages() {
         <div className="card text-slate-300">Nenhuma etapa aberta no momento.</div>
       )}
 
-      {openStages.map(s => {
+      {openStages.map((s) => {
         const my = mine[String(s.id)]
         const myLabel = my ? (my.going ? "Vou" : "Não vou") : "Ainda não respondeu"
         const activeVou = !!my && my.going === true
@@ -209,7 +240,10 @@ export default function AthleteStages() {
             <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
               <div className="space-y-1">
                 <div className="font-bold flex items-center gap-2">
-                  <span>{s.stage_no ? `#${s.stage_no} ` : ""}{s.name}</span>
+                  <span>
+                    {s.stage_no ? `#${s.stage_no} ` : ""}
+                    {s.name}
+                  </span>
                   {pillFor(my)}
                 </div>
 
@@ -219,15 +253,27 @@ export default function AthleteStages() {
 
                 <div className="text-sm">
                   Sua resposta: <b>{myLabel}</b>
-                  {my?.responded_at ? <span className="text-xs text-slate-300">  {fmtTs(my.responded_at)}</span> : null}
+                  {my?.responded_at ? (
+                    <span className="text-xs text-slate-300"> — {fmtTs(my.responded_at)}</span>
+                  ) : null}
                 </div>
               </div>
 
               <div className="flex gap-2 md:pt-1">
-                <button className={btnClass(activeVou)} disabled={loading} onClick={() => void setGoing(s.id, true)} title="Confirmar presença">
+                <button
+                  className={btnClass(activeVou)}
+                  disabled={loading}
+                  onClick={() => void setGoing(s.id, true)}
+                  title="Confirmar presença"
+                >
                   Vou
                 </button>
-                <button className={btnClass(activeNao)} disabled={loading} onClick={() => void setGoing(s.id, false)} title="Recusar inscrição">
+                <button
+                  className={btnClass(activeNao)}
+                  disabled={loading}
+                  onClick={() => void setGoing(s.id, false)}
+                  title="Recusar inscrição"
+                >
                   Não vou
                 </button>
               </div>

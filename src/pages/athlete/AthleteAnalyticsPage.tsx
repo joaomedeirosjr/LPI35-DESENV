@@ -18,6 +18,9 @@ type FallbackBestPartner = {
   games_diff: number
 }
 
+type Agg = { played: number; wins: number; losses: number; gf: number; ga: number }
+type BestAgg = Agg & { winRate: number; diff: number }
+
 function computeBestPartnerFromMatches(args: {
   athleteName: string | null
   lastMatches: Array<{
@@ -30,7 +33,7 @@ function computeBestPartnerFromMatches(args: {
   const athlete = (args.athleteName ?? "").trim()
   if (!athlete) return null
 
-  const agg = new Map<string, { played: number; wins: number; losses: number; gf: number; ga: number }>()
+  const agg = new Map<string, Agg>()
 
   for (const m of args.lastMatches ?? []) {
     const parts = (m.team_label ?? "")
@@ -48,7 +51,7 @@ function computeBestPartnerFromMatches(args: {
       else continue
     }
 
-    const a = agg.get(partner) ?? { played: 0, wins: 0, losses: 0, gf: 0, ga: 0 }
+    const a: Agg = agg.get(partner) ?? { played: 0, wins: 0, losses: 0, gf: 0, ga: 0 }
     a.played += 1
     if (m.result === "W") a.wins += 1
     else if (m.result === "L") a.losses += 1
@@ -59,21 +62,28 @@ function computeBestPartnerFromMatches(args: {
 
   if (agg.size === 0) return null
 
-  let best: { partner: string; a: any } | null = null
-  for (const [partner, a] of agg.entries()) {
-    const winRate = a.played > 0 ? (a.wins / a.played) * 100 : 0
-    const diff = a.gf - a.ga
-    if (!best) best = { partner, a: { ...a, winRate, diff } }
-    else {
-      const b = best.a
-      const better =
-        a.wins > b.wins ||
-        (a.wins === b.wins && winRate > b.winRate) ||
-        (a.wins === b.wins && winRate === b.winRate && diff > b.diff) ||
-        (a.wins === b.wins && winRate === b.winRate && diff === b.diff && a.played > b.played) ||
-        (a.wins === b.wins && winRate === b.winRate && diff === b.diff && a.played === b.played && partner < best.partner)
-      if (better) best = { partner, a: { ...a, winRate, diff } }
+  let best: { partner: string; a: BestAgg } | null = null
+
+  for (const [partner, a0] of agg.entries()) {
+    const winRate = a0.played > 0 ? (a0.wins / a0.played) * 100 : 0
+    const diff = a0.gf - a0.ga
+    const a: BestAgg = { ...a0, winRate, diff }
+
+    if (!best) {
+      best = { partner, a }
+      continue
     }
+
+    const b: BestAgg = best.a
+
+    const better =
+      a.wins > b.wins ||
+      (a.wins === b.wins && a.winRate > b.winRate) ||
+      (a.wins === b.wins && a.winRate === b.winRate && a.diff > b.diff) ||
+      (a.wins === b.wins && a.winRate === b.winRate && a.diff === b.diff && a.played > b.played) ||
+      (a.wins === b.wins && a.winRate === b.winRate && a.diff === b.diff && a.played === b.played && partner < best.partner)
+
+    if (better) best = { partner, a }
   }
 
   if (!best) return null
@@ -480,9 +490,7 @@ function StageEvolutionSvgChart({ byStage }: { byStage: any[] }) {
             </g>
           ))}
 
-          {avgY != null ? (
-            <line x1={padL} x2={W - padR} y1={avgY} y2={avgY} stroke="rgba(255,255,255,0.22)" strokeDasharray="6 6" />
-          ) : null}
+          {avgY != null ? <line x1={padL} x2={W - padR} y1={avgY} y2={avgY} stroke="rgba(255,255,255,0.22)" strokeDasharray="6 6" /> : null}
 
           <path d={areaPath} fill="url(#evoArea)" />
           <path d={linePath} fill="none" stroke="rgba(52,211,153,0.95)" strokeWidth="3" filter="url(#glow)" />
@@ -496,14 +504,7 @@ function StageEvolutionSvgChart({ byStage }: { byStage: any[] }) {
               onTouchEnd={() => setHover(null)}
               style={{ cursor: "pointer" }}
             >
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={hover === p.i ? 7 : 4}
-                fill="rgba(52,211,153,1)"
-                stroke="rgba(15,23,42,0.95)"
-                strokeWidth="3"
-              />
+              <circle cx={p.x} cy={p.y} r={hover === p.i ? 7 : 4} fill="rgba(52,211,153,1)" stroke="rgba(15,23,42,0.95)" strokeWidth="3" />
             </g>
           ))}
 
@@ -551,7 +552,6 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
       return
     }
 
-    // nome do atleta logado
     let athleteNameLocal: string | null = null
     const pn = await supabase.from("profiles").select("nome").eq("id", uid).maybeSingle()
     athleteNameLocal = ((pn.data as any)?.nome ?? null) as any
@@ -716,25 +716,24 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
       lastMatches,
     } as any)
 
-    if (bp && (bp as any).error) setBestPartner(null)
-    else setBestPartner((((bp as any)?.data) as any) ?? null)
-
     const bpData = (((bp as any)?.data) as any) ?? null
     const bpPartner = bpData?.partner_label ?? bpData?.partner_name ?? bpData?.partner ?? null
     if (!bpPartner) {
       const fb = computeBestPartnerFromMatches({ athleteName: athleteNameLocal ?? athleteName, lastMatches: lastMatches as any })
       setBestPartner((fb ?? null) as any)
+    } else {
+      setBestPartner((bpData ?? null) as any)
     }
 
     setLoading(false)
   }
 
   useEffect(() => {
-    load()
+    void load()
 
     const ch = supabase
       .channel("athlete-analytics-matches")
-      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches" }, () => void load())
       .subscribe()
 
     return () => {
@@ -859,12 +858,7 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
             </thead>
             <tbody>
               {stagesSorted.map((st) => (
-                <tr
-                  key={st.stage_id}
-                  className="border-b border-white/5 hover:bg-white/5"
-                  // ✅ não navega para rota inexistente; quando quiser detalhamento, eu crio /admin/athlete/analytics/stage/:id
-                  onClick={() => {}}
-                >
+                <tr key={st.stage_id} className="border-b border-white/5 hover:bg-white/5" onClick={() => {}}>
                   <td className="py-2 pr-3">{st.stage_name}</td>
                   <td className="py-2 pr-3">{st.season_name}</td>
                   <td className="py-2 px-2 text-right">{st.played}</td>
@@ -912,7 +906,8 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
               ) : (
                 lastMatchesSorted.map((m) => {
                   const r = resultIcon(m.result)
-                  const colorClass = r.kind === "win" ? "text-emerald-400" : r.kind === "loss" ? "text-rose-400" : "text-slate-300"
+                  const colorClass =
+                    r.kind === "win" ? "text-emerald-400" : r.kind === "loss" ? "text-rose-400" : "text-slate-300"
                   return (
                     <tr key={m.match_id} className="border-b border-white/5">
                       <td className="py-2 pr-3 font-bold">
@@ -940,7 +935,6 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
         </div>
       </div>
 
-      {/* Botão opcional (se quiser) */}
       <div className="flex justify-end">
         <button className="btn-ghost" onClick={() => nav("/admin")}>
           Voltar

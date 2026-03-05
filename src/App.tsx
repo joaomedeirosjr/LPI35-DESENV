@@ -5,7 +5,6 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
 import SignupPage from './pages/SignupPage'
-import AppLayout from './pages/app/AppLayout'
 import AdminLayout from './pages/admin/AdminLayout'
 import RankingPublic from './pages/RankingPublic'
 
