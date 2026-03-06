@@ -28,11 +28,22 @@ type StageRow = {
   updated_at?: string | null
 }
 
+type DeepDeleteResult = {
+  deleted_stage_id: number
+  deleted_match_teams: number
+  deleted_matches: number
+  deleted_round_pairs: number
+  deleted_round_groups: number
+  deleted_rounds: number
+  deleted_stage_participants: number
+  deleted_stage_roster: number
+  deleted_guests: number
+  deleted_stages: number
+}
+
 function toIsoOrNull(v: string) {
   const s = (v ?? "").trim()
   if (!s) return null
-  // input type="datetime-local" -> "YYYY-MM-DDTHH:mm"
-  // Supabase aceita ISO (UTC ou local). Mantemos como está para não quebrar.
   return s.length === 16 ? `${s}:00` : s
 }
 
@@ -51,6 +62,7 @@ function fmtTs(v: string | null | undefined) {
 export default function AdminStages() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   const [seasons, setSeasons] = useState<SeasonRow[]>([])
   const [clubs, setClubs] = useState<ClubRow[]>([])
@@ -148,6 +160,8 @@ export default function AdminStages() {
 
   async function startCreate() {
     setEditingId(null)
+    setError(null)
+    setSuccess(null)
 
     const defaultSeasonId = seasons[0]?.id ?? ""
     let nextNo = 1
@@ -171,6 +185,8 @@ export default function AdminStages() {
 
   function startEdit(r: StageRow) {
     setEditingId(r.id)
+    setError(null)
+    setSuccess(null)
     setForm({
       season_id: r.season_id ?? "",
       club_id: r.club_id ?? "",
@@ -199,6 +215,7 @@ export default function AdminStages() {
   async function save() {
     setLoading(true)
     setError(null)
+    setSuccess(null)
     try {
       if (!form.season_id) throw new Error("Selecione a temporada.")
       if (!form.name.trim()) throw new Error("Informe o nome da etapa.")
@@ -218,9 +235,11 @@ export default function AdminStages() {
       if (editingId) {
         const { error: upErr } = await q.update(payload).eq("id", editingId)
         if (upErr) throw upErr
+        setSuccess("Etapa atualizada com sucesso.")
       } else {
         const { error: insErr } = await q.insert(payload)
         if (insErr) throw insErr
+        setSuccess("Etapa criada com sucesso.")
       }
 
       await loadAll()
@@ -236,9 +255,85 @@ export default function AdminStages() {
     if (!confirm("Remover esta etapa?")) return
     setLoading(true)
     setError(null)
+    setSuccess(null)
     try {
       const { error } = await supabase.from("stages").delete().eq("id", id)
       if (error) throw error
+      setSuccess(`Etapa ${id} removida com sucesso.`)
+      await loadAll()
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function removeDeep(stage: StageRow) {
+    setError(null)
+    setSuccess(null)
+
+    const typed = window.prompt(
+      [
+        `EXCLUSÃO DO BD — ETAPA ${stage.id}`,
+        ``,
+        `Etapa: ${stage.stage_no ? `${stage.stage_no} — ` : ""}${stage.name}`,
+        `Status: ${statusLabel(stage.status)}`,
+        ``,
+        `Esta operação removerá completamente do banco de dados:`,
+        `- rodadas`,
+        `- jogos`,
+        `- placares`,
+        `- duplas`,
+        `- participantes`,
+        `- convidados`,
+        `- ranking da etapa`,
+        ``,
+        `Esta ação NÃO pode ser desfeita.`,
+        ``,
+        `Digite exatamente: EXCLUIR ETAPA`
+      ].join("\n")
+    )
+
+    if (typed === null) return
+
+    if (typed.trim() !== "EXCLUIR ETAPA") {
+      setError("Confirmação inválida. Digite exatamente EXCLUIR ETAPA.")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const { data, error } = await supabase.rpc("admin_delete_stage_deep", {
+        p_stage_id: stage.id
+      })
+
+      if (error) throw error
+
+      const result = Array.isArray(data) ? (data[0] as DeepDeleteResult | undefined) : undefined
+
+      if (!result) {
+        setSuccess(`Exclusão do BD da etapa ${stage.id} concluída.`)
+      } else {
+        setSuccess(
+          [
+            `Exclusão do BD concluída para a etapa ${result.deleted_stage_id}.`,
+            `match_teams: ${result.deleted_match_teams}`,
+            `matches: ${result.deleted_matches}`,
+            `round_pairs: ${result.deleted_round_pairs}`,
+            `round_groups: ${result.deleted_round_groups}`,
+            `rounds: ${result.deleted_rounds}`,
+            `stage_participants: ${result.deleted_stage_participants}`,
+            `stage_roster: ${result.deleted_stage_roster}`,
+            `guests: ${result.deleted_guests}`,
+            `stages: ${result.deleted_stages}`
+          ].join(" ")
+        )
+      }
+
+      if (editingId === stage.id) {
+        await startCreate()
+      }
+
       await loadAll()
     } catch (e: any) {
       setError(e?.message ?? String(e))
@@ -259,6 +354,12 @@ export default function AdminStages() {
       {error && (
         <div className="rounded-xl border border-red-700 bg-red-950/40 p-3 text-red-200 text-sm">
           {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200 text-sm">
+          {success}
         </div>
       )}
 
@@ -378,7 +479,7 @@ export default function AdminStages() {
 
       <div className="card p-4">
         <div className="overflow-x-auto">
-          <table className="min-w-[900px] w-full text-sm">
+          <table className="min-w-[1100px] w-full text-sm">
             <thead>
               <tr className="text-left text-slate-300">
                 <th className="py-2">ID</th>
@@ -407,12 +508,15 @@ export default function AdminStages() {
                   <td className="py-2">{fmtTs(r.signup_close_at)}</td>
                   <td className="py-2">{formatDateBR(r.starts_on) || "—"}</td>
                   <td className="py-2 text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-2 flex-wrap">
                       <button className="btn btn-secondary" onClick={() => startEdit(r)} disabled={loading}>
                         Editar
                       </button>
                       <button className="btn btn-danger" onClick={() => remove(r.id)} disabled={loading}>
                         Remover
+                      </button>
+                      <button className="btn btn-danger" onClick={() => void removeDeep(r)} disabled={loading}>
+                        Exclusão do BD
                       </button>
                     </div>
                   </td>
