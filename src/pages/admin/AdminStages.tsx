@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "../../lib/supabase"
+import { formatDateBR } from "../../utils/date"
 
 type SeasonRow = { id: string; name: string; year: number }
 type ClubRow = { id: string; name: string }
@@ -93,7 +94,6 @@ export default function AdminStages() {
   async function getNextStageNo(seasonId: string): Promise<number> {
     if (!seasonId) return 1
 
-    // Busca o maior stage_no da temporada (ignorando nulls) e retorna +1
     const { data, error } = await supabase
       .from("stages")
       .select("stage_no")
@@ -154,7 +154,6 @@ export default function AdminStages() {
     try {
       if (defaultSeasonId) nextNo = await getNextStageNo(defaultSeasonId)
     } catch (e: any) {
-      // Se der erro, não bloqueia o formulário — só mantém "1"
       console.warn("Falha ao calcular próximo Nº da etapa:", e?.message ?? e)
     }
 
@@ -185,10 +184,8 @@ export default function AdminStages() {
   }
 
   async function onChangeSeasonId(newSeasonId: string) {
-    // Atualiza season_id sempre
     setForm((prev) => ({ ...prev, season_id: newSeasonId }))
 
-    // Só auto-sequencia em modo "criar" (não editando)
     if (editingId) return
 
     try {
@@ -214,10 +211,10 @@ export default function AdminStages() {
         status: form.status,
         signup_open_at: toIsoOrNull(form.signup_open_at),
         signup_close_at: toIsoOrNull(form.signup_close_at),
-        starts_on: form.starts_on.trim() === "" ? null : form.starts_on.trim() // YYYY-MM-DD
+        starts_on: form.starts_on.trim() === "" ? null : form.starts_on.trim()
       }
 
-      let q = supabase.from("stages")
+      const q = supabase.from("stages")
       if (editingId) {
         const { error: upErr } = await q.update(payload).eq("id", editingId)
         if (upErr) throw upErr
@@ -408,7 +405,7 @@ export default function AdminStages() {
                   <td className="py-2">{statusLabel(r.status)}</td>
                   <td className="py-2">{fmtTs(r.signup_open_at)}</td>
                   <td className="py-2">{fmtTs(r.signup_close_at)}</td>
-                  <td className="py-2">{r.starts_on ?? "—"}</td>
+                  <td className="py-2">{formatDateBR(r.starts_on) || "—"}</td>
                   <td className="py-2 text-right">
                     <div className="flex justify-end gap-2">
                       <button className="btn btn-secondary" onClick={() => startEdit(r)} disabled={loading}>
