@@ -46,6 +46,11 @@ type GarbageCheckRow = {
   qtd: number
 }
 
+type IntegrityCheckRow = {
+  check_name: string
+  qtd: number
+}
+
 function toIsoOrNull(v: string) {
   const s = (v ?? "").trim()
   if (!s) return null
@@ -67,6 +72,7 @@ function fmtTs(v: string | null | undefined) {
 export default function AdminStages() {
   const [loading, setLoading] = useState(false)
   const [checkingGarbage, setCheckingGarbage] = useState(false)
+  const [checkingIntegrity, setCheckingIntegrity] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
@@ -74,6 +80,7 @@ export default function AdminStages() {
   const [clubs, setClubs] = useState<ClubRow[]>([])
   const [rows, setRows] = useState<StageRow[]>([])
   const [garbageRows, setGarbageRows] = useState<GarbageCheckRow[]>([])
+  const [integrityRows, setIntegrityRows] = useState<IntegrityCheckRow[]>([])
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState({
@@ -117,6 +124,14 @@ export default function AdminStages() {
   const garbageHasIssues = useMemo(() => {
     return garbageRows.some((row) => Number(row.qtd || 0) > 0)
   }, [garbageRows])
+
+  const integrityTotal = useMemo(() => {
+    return integrityRows.reduce((acc, row) => acc + Number(row.qtd || 0), 0)
+  }, [integrityRows])
+
+  const integrityHasIssues = useMemo(() => {
+    return integrityRows.some((row) => Number(row.qtd || 0) > 0)
+  }, [integrityRows])
 
   async function getNextStageNo(seasonId: string): Promise<number> {
     if (!seasonId) return 1
@@ -385,6 +400,34 @@ export default function AdminStages() {
     }
   }
 
+  async function checkIntegrityReport() {
+    setCheckingIntegrity(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const { data, error } = await supabase.rpc("admin_integrity_report")
+
+      if (error) throw error
+
+      const rows = (data ?? []) as IntegrityCheckRow[]
+      setIntegrityRows(rows)
+
+      const total = rows.reduce((acc, row) => acc + Number(row.qtd || 0), 0)
+
+      if (total === 0) {
+        setSuccess("Relatório de integridade concluído: nenhuma inconsistência encontrada.")
+      } else {
+        setSuccess(`Relatório de integridade concluído: ${total} ocorrência(s) encontrada(s).`)
+      }
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+      setIntegrityRows([])
+    } finally {
+      setCheckingIntegrity(false)
+    }
+  }
+
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -392,15 +435,24 @@ export default function AdminStages() {
         <div className="flex gap-2 flex-wrap">
           <button
             className="btn btn-secondary"
+            onClick={() => void checkIntegrityReport()}
+            disabled={loading || checkingGarbage || checkingIntegrity}
+          >
+            {checkingIntegrity ? "Gerando integridade..." : "Relatório de integridade"}
+          </button>
+
+          <button
+            className="btn btn-secondary"
             onClick={() => void checkStageGarbage()}
-            disabled={loading || checkingGarbage}
+            disabled={loading || checkingGarbage || checkingIntegrity}
           >
             {checkingGarbage ? "Verificando sujeira..." : "Verificar sujeira do BD"}
           </button>
+
           <button
             className="btn btn-secondary"
             onClick={() => void startCreate()}
-            disabled={loading || checkingGarbage}
+            disabled={loading || checkingGarbage || checkingIntegrity}
           >
             Nova etapa
           </button>
@@ -416,6 +468,57 @@ export default function AdminStages() {
       {success && (
         <div className="rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200 text-sm">
           {success}
+        </div>
+      )}
+
+      {integrityRows.length > 0 && (
+        <div
+          className={`rounded-xl border p-4 ${
+            integrityHasIssues
+              ? "border-amber-700 bg-amber-950/30"
+              : "border-emerald-700 bg-emerald-950/20"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+            <div className="font-semibold">
+              Relatório de integridade geral da liga
+            </div>
+            <div
+              className={`text-sm font-medium ${
+                integrityHasIssues ? "text-amber-200" : "text-emerald-200"
+              }`}
+            >
+              Total de ocorrências: {integrityTotal}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-[760px] w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-300">
+                  <th className="py-2">Verificação</th>
+                  <th className="py-2 text-right">Qtd</th>
+                </tr>
+              </thead>
+              <tbody>
+                {integrityRows.map((row) => {
+                  const hasIssue = Number(row.qtd || 0) > 0
+                  return (
+                    <tr key={row.check_name} className="border-t border-white/10">
+                      <td className="py-2">{row.check_name}</td>
+                      <td
+                        className={`py-2 text-right font-medium ${
+                          hasIssue ? "text-amber-300" : "text-emerald-300"
+                        }`}
+                      >
+                        {row.qtd}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -573,14 +676,18 @@ export default function AdminStages() {
         </div>
 
         <div className="flex gap-2">
-          <button className="btn btn-primary" onClick={save} disabled={loading || checkingGarbage}>
+          <button
+            className="btn btn-primary"
+            onClick={save}
+            disabled={loading || checkingGarbage || checkingIntegrity}
+          >
             {editingId ? "Salvar alterações" : "Criar etapa"}
           </button>
           {editingId && (
             <button
               className="btn btn-secondary"
               onClick={() => void startCreate()}
-              disabled={loading || checkingGarbage}
+              disabled={loading || checkingGarbage || checkingIntegrity}
             >
               Cancelar
             </button>
@@ -623,21 +730,21 @@ export default function AdminStages() {
                       <button
                         className="btn btn-secondary"
                         onClick={() => startEdit(r)}
-                        disabled={loading || checkingGarbage}
+                        disabled={loading || checkingGarbage || checkingIntegrity}
                       >
                         Editar
                       </button>
                       <button
                         className="btn btn-danger"
                         onClick={() => remove(r.id)}
-                        disabled={loading || checkingGarbage}
+                        disabled={loading || checkingGarbage || checkingIntegrity}
                       >
                         Remover
                       </button>
                       <button
                         className="btn btn-danger"
                         onClick={() => void removeDeep(r)}
-                        disabled={loading || checkingGarbage}
+                        disabled={loading || checkingGarbage || checkingIntegrity}
                       >
                         Exclusão do BD
                       </button>
