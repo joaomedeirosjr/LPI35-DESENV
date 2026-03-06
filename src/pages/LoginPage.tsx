@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 export default function LoginPage() {
@@ -75,6 +75,8 @@ export default function LoginPage() {
           <div className='space-y-1'>
             <label className='text-xs text-slate-300'>Email</label>
             <input
+              type='email'
+              autoComplete='email'
               className='w-full p-2 rounded-xl bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-gripoOrange'
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -85,10 +87,20 @@ export default function LoginPage() {
             <label className='text-xs text-slate-300'>Senha</label>
             <input
               type='password'
+              autoComplete='current-password'
               className='w-full p-2 rounded-xl bg-white/5 border border-white/10 outline-none focus:ring-2 focus:ring-gripoOrange'
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+          </div>
+
+          <div className='flex justify-end'>
+            <Link
+              to='/esqueci-senha'
+              className='text-sm text-gripoOrange hover:underline'
+            >
+              Esqueci minha senha
+            </Link>
           </div>
 
           {err && <div className='text-red-200 text-sm'>{err}</div>}
