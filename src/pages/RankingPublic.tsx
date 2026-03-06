@@ -3,10 +3,10 @@ import * as ReactDOM from "react-dom";
 import { supabase } from "../lib/supabase";
 
 type Category = "A" | "B" | "C" | "D";
-type TabKey = "stage" | "season";
+type TabKey = "pairs" | "stage" | "season";
 
 type SeasonRow = { id: string; name: string | null; created_at?: string | null };
-type StageRow = { id: number; name: string | null; season_id: string | null };
+type StageRow = { id: number; name: string | null; season_id: string | null; status: string | null };
 
 type StageRankingRow = {
   pos: number;
@@ -30,6 +30,21 @@ type SeasonRankingRow = {
   stages_played: number;
 };
 
+type PairRankingRow = {
+  pos: number;
+  pair_id: string;
+  pair_label: string;
+  player1_name: string;
+  player2_name: string;
+  matches_played: number;
+  wins: number;
+  losses: number;
+  games_for: number;
+  games_against: number;
+  games_diff: number;
+  age_sum: number | null;
+};
+
 function classNames(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
@@ -40,6 +55,7 @@ function medalForPos(pos: number) {
   if (pos === 3) return "🥉";
   return null;
 }
+
 function topRowTone(pos: number) {
   if (pos === 1) return "ring-emerald-400/30 bg-emerald-500/10";
   if (pos === 2) return "ring-slate-300/20 bg-white/5";
@@ -212,9 +228,8 @@ function PlayerDetailsModal({
 }
 
 export default function RankingPublic({ embedded = false }: { embedded?: boolean }) {
-  const [tab, setTab] = useState<TabKey>("stage");
+  const [tab, setTab] = useState<TabKey>("pairs");
 
-  // ✅ começa como B, mas vamos sobrescrever 1x com a categoria do atleta logado
   const [category, setCategory] = useState<Category>("B");
   const [categoryAutoApplied, setCategoryAutoApplied] = useState(false);
   const [categoryTouchedByUser, setCategoryTouchedByUser] = useState(false);
@@ -237,8 +252,8 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
 
   const [stageRows, setStageRows] = useState<StageRankingRow[]>([]);
   const [seasonRows, setSeasonRows] = useState<SeasonRankingRow[]>([]);
+  const [pairRows, setPairRows] = useState<PairRankingRow[]>([]);
 
-  // ---------- auth ----------
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -254,7 +269,6 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
     };
   }, []);
 
-  // ✅ Auto-set da categoria baseado no profile logado (1x, sem sobrescrever cliques do usuário)
   useEffect(() => {
     if (!me) return;
     if (categoryTouchedByUser) return;
@@ -262,7 +276,6 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
 
     (async () => {
       try {
-        // tentativa 1: coluna "category"
         const r1 = await supabase.from("profiles").select("category").eq("id", me).maybeSingle();
         if (!r1.error) {
           const c = (r1.data as any)?.category;
@@ -273,7 +286,6 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
           }
         }
 
-        // tentativa 2: coluna "categoria" (caso seu schema use pt-br)
         const r2 = await supabase.from("profiles").select("categoria").eq("id", me).maybeSingle();
         if (!r2.error) {
           const c = (r2.data as any)?.categoria;
@@ -284,7 +296,6 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
           }
         }
 
-        // se não achou, apenas marca como aplicado para não ficar batendo no banco sempre
         setCategoryAutoApplied(true);
       } catch {
         setCategoryAutoApplied(true);
@@ -292,7 +303,6 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
     })();
   }, [me, categoryTouchedByUser, categoryAutoApplied]);
 
-  // ---------- meta: seasons ----------
   useEffect(() => {
     (async () => {
       setLoadingMeta(true);
@@ -304,7 +314,6 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
         const list = (data ?? []) as SeasonRow[];
         setSeasons(list);
 
-        // auto select latest season
         if (!seasonId && list.length) setSeasonId(list[0].id);
       } catch (e: any) {
         setError(e?.message ?? "Falha ao carregar temporadas.");
@@ -312,10 +321,8 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
         setLoadingMeta(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---------- meta: stages for selected season ----------
   useEffect(() => {
     if (!seasonId) return;
 
@@ -323,13 +330,16 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
       setLoadingMeta(true);
       setError(null);
       try {
-        const { data, error } = await supabase.from("stages").select("id,name,season_id").eq("season_id", seasonId).order("id", { ascending: false });
+        const { data, error } = await supabase
+          .from("stages")
+          .select("id,name,season_id,status")
+          .eq("season_id", seasonId)
+          .order("id", { ascending: false });
         if (error) throw error;
 
         const list = (data ?? []) as StageRow[];
         setStages(list);
 
-        // auto select latest stage
         const ids = new Set(list.map((s) => s.id));
         if (!stageId || !ids.has(stageId)) {
           if (list.length) setStageId(list[0].id);
@@ -342,14 +352,43 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
     })();
   }, [seasonId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---------- data ----------
   async function load() {
     setLoading(true);
     setError(null);
     try {
       if (!me) throw new Error("Você precisa estar logado para ver seu ranking.");
 
-      if (tab === "stage") {
+      if (tab === "pairs") {
+        if (!stageId) throw new Error("Selecione uma etapa.");
+
+        const { data, error } = await supabase
+          .from("v_ranking_stage_pairs")
+          .select("stage_id,category,pair_id,pair_label,player1_name,player2_name,matches_played,wins,losses,games_for,games_against,games_diff,age_sum,position")
+          .eq("stage_id", stageId)
+          .eq("category", category)
+          .order("position", { ascending: true });
+
+        if (error) throw error;
+
+        const rows: PairRankingRow[] = ((data ?? []) as any[]).map((r) => ({
+          pos: Number(r.position ?? 0) || 0,
+          pair_id: String(r.pair_id ?? ""),
+          pair_label: String(r.pair_label ?? "—"),
+          player1_name: String(r.player1_name ?? "—"),
+          player2_name: String(r.player2_name ?? "—"),
+          matches_played: Number(r.matches_played ?? 0) || 0,
+          wins: Number(r.wins ?? 0) || 0,
+          losses: Number(r.losses ?? 0) || 0,
+          games_for: Number(r.games_for ?? 0) || 0,
+          games_against: Number(r.games_against ?? 0) || 0,
+          games_diff: Number(r.games_diff ?? 0) || 0,
+          age_sum: r.age_sum == null ? null : Number(r.age_sum),
+        }));
+
+        setPairRows(rows);
+        setStageRows([]);
+        setSeasonRows([]);
+      } else if (tab === "stage") {
         if (!stageId) throw new Error("Selecione uma etapa.");
 
         const { data, error } = await supabase
@@ -374,7 +413,10 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
           age_years: r.age_years == null ? null : Number(r.age_years),
           stage_points: (Number(r.wins ?? 0) || 0) * 10,
         }));
+
         setStageRows(rows);
+        setPairRows([]);
+        setSeasonRows([]);
       } else {
         if (!seasonId) throw new Error("Selecione uma temporada.");
 
@@ -396,17 +438,19 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
         }));
 
         setSeasonRows(rows);
+        setPairRows([]);
+        setStageRows([]);
       }
     } catch (e: any) {
       setError(e?.message ?? "Falha ao carregar ranking.");
       setStageRows([]);
       setSeasonRows([]);
+      setPairRows([]);
     } finally {
       setLoading(false);
     }
   }
 
-  // Live ranking: atualiza automaticamente ao lançar placares (insert/update em matches)
   useEffect(() => {
     let t: any = null;
 
@@ -430,22 +474,39 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
       if (t) clearTimeout(t);
       supabase.removeChannel(ch);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, seasonId, stageId, category]);
+  }, [tab, seasonId, stageId, category]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!me) return;
     if (!seasonId) return;
-    if (tab === "stage" && !stageId) return;
+    if ((tab === "stage" || tab === "pairs") && !stageId) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, category, seasonId, stageId, me]);
+  }, [tab, category, seasonId, stageId, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedSeason = useMemo(() => seasons.find((s) => s.id === seasonId), [seasons, seasonId]);
   const selectedStage = useMemo(() => stages.find((s) => s.id === stageId), [stages, stageId]);
 
+  const isStageFinished = useMemo(() => {
+    return selectedStage?.status === "finished";
+  }, [selectedStage]);
+
+  const podiumPairs = useMemo(() => {
+    if (tab !== "pairs") return { first: null, second: null, third: null };
+
+    const first = pairRows.find((r) => r.pos === 1) ?? null;
+    const second = pairRows.find((r) => r.pos === 2) ?? null;
+    const third = pairRows.find((r) => r.pos === 3) ?? null;
+
+    return { first, second, third };
+  }, [tab, pairRows]);
+
   const titleLine = useMemo(() => {
-    if (tab === "stage") return `${selectedSeason?.name ?? "Temporada"} • Etapa ${stageId}${selectedStage?.name ? ` — ${selectedStage.name}` : ""} • Categoria ${category}`;
+    if (tab === "pairs") {
+      return `${selectedSeason?.name ?? "Temporada"} • Etapa ${stageId}${selectedStage?.name ? ` — ${selectedStage.name}` : ""} • Categoria ${category}`;
+    }
+    if (tab === "stage") {
+      return `${selectedSeason?.name ?? "Temporada"} • Etapa ${stageId}${selectedStage?.name ? ` — ${selectedStage.name}` : ""} • Categoria ${category}`;
+    }
     return `${selectedSeason?.name ?? "Temporada"} • Categoria ${category}`;
   }, [tab, selectedSeason?.name, selectedStage?.name, stageId, category]);
 
@@ -517,6 +578,15 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
               <button
                 className={classNames(
                   "rounded-2xl px-4 py-2 text-sm font-extrabold transition",
+                  tab === "pairs" ? "bg-[#1f2937] text-white" : "text-white/70 hover:bg-white/5"
+                )}
+                onClick={() => setTab("pairs")}
+              >
+                Por Dupla
+              </button>
+              <button
+                className={classNames(
+                  "rounded-2xl px-4 py-2 text-sm font-extrabold transition",
                   tab === "stage" ? "bg-[#1f2937] text-white" : "text-white/70 hover:bg-white/5"
                 )}
                 onClick={() => setTab("stage")}
@@ -558,7 +628,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                 <select
                   value={stageId || ""}
                   onChange={(e) => setStageId(Number(e.target.value))}
-                  disabled={loadingMeta || tab !== "stage"}
+                  disabled={loadingMeta || tab === "season"}
                   className="mt-1 w-full rounded-xl border border-white/10 bg-[#0f172a] px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60"
                 >
                   {stages.map((s) => (
@@ -567,7 +637,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                     </option>
                   ))}
                 </select>
-                {tab !== "stage" && <div className="mt-1 text-[11px] text-white/40">* Etapa usada apenas em “Por Etapa”.</div>}
+                {tab === "season" && <div className="mt-1 text-[11px] text-white/40">* Etapa usada apenas em “Por Dupla” e “Por Etapa”.</div>}
               </div>
 
               <div className="md:col-span-3">
@@ -595,7 +665,11 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
             </div>
 
             <div className="mt-4 flex items-center justify-between">
-              <div className="text-xs text-white/50">Desempate: saldo games → games pró → confronto direto (empate de 2) → idade.</div>
+              <div className="text-xs text-white/50">
+                {tab === "pairs"
+                  ? "Desempate: vitórias → saldo games → games pró → confronto direto (empate de 2) → soma das idades."
+                  : "Desempate: saldo games → games pró → confronto direto (empate de 2) → idade."}
+              </div>
 
               <button
                 onClick={load}
@@ -610,10 +684,108 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
           </div>
 
           <div className="mt-6 rounded-2xl border border-white/10 bg-[#111827] overflow-hidden">
-            <div className="border-b border-white/10 px-4 py-3 text-sm font-extrabold">{tab === "stage" ? "Tabela da Etapa" : "Ranking da Temporada"}</div>
+            {tab === "pairs" && !isStageFinished && (
+              <div className="border-b border-white/10 px-4 py-3 text-sm text-white/60">
+                O pódio oficial será exibido somente após finalizar a etapa.
+              </div>
+            )}
+
+            {tab === "pairs" && isStageFinished && (podiumPairs.first || podiumPairs.second || podiumPairs.third) && (
+              <div className="border-b border-white/10 px-4 py-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4">
+                    <div className="text-xs font-bold uppercase tracking-wide text-emerald-200/80">🥇 Campeão</div>
+                    <div className="mt-2 text-lg font-extrabold text-white">
+                      {podiumPairs.first?.pair_label ?? "—"}
+                    </div>
+                    <div className="mt-2 text-xs text-white/60">
+                      {podiumPairs.first
+                        ? `${podiumPairs.first.wins}V • SG ${podiumPairs.first.games_diff >= 0 ? "+" : ""}${podiumPairs.first.games_diff} • GP ${podiumPairs.first.games_for}`
+                        : ""}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-300/20 bg-white/5 p-4">
+                    <div className="text-xs font-bold uppercase tracking-wide text-white/70">🥈 Vice</div>
+                    <div className="mt-2 text-lg font-extrabold text-white">
+                      {podiumPairs.second?.pair_label ?? "—"}
+                    </div>
+                    <div className="mt-2 text-xs text-white/60">
+                      {podiumPairs.second
+                        ? `${podiumPairs.second.wins}V • SG ${podiumPairs.second.games_diff >= 0 ? "+" : ""}${podiumPairs.second.games_diff} • GP ${podiumPairs.second.games_for}`
+                        : ""}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-orange-400/25 bg-orange-500/10 p-4">
+                    <div className="text-xs font-bold uppercase tracking-wide text-orange-200/80">🥉 3º lugar</div>
+                    <div className="mt-2 text-lg font-extrabold text-white">
+                      {podiumPairs.third?.pair_label ?? "—"}
+                    </div>
+                    <div className="mt-2 text-xs text-white/60">
+                      {podiumPairs.third
+                        ? `${podiumPairs.third.wins}V • SG ${podiumPairs.third.games_diff >= 0 ? "+" : ""}${podiumPairs.third.games_diff} • GP ${podiumPairs.third.games_for}`
+                        : ""}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="border-b border-white/10 px-4 py-3 text-sm font-extrabold">
+              {tab === "pairs" ? "Classificação das Duplas da Etapa" : tab === "stage" ? "Tabela da Etapa" : "Ranking da Temporada"}
+            </div>
 
             <div className="overflow-auto">
-              {tab === "stage" ? (
+              {tab === "pairs" ? (
+                <table className="min-w-[980px] w-full text-left">
+                  <thead className="bg-[#0f172a] text-xs font-bold text-white/60">
+                    <tr className="border-b border-white/10">
+                      <th className="px-4 py-3">POS</th>
+                      <th className="px-4 py-3">DUPLA</th>
+                      <th className="px-4 py-3">J</th>
+                      <th className="px-4 py-3">V</th>
+                      <th className="px-4 py-3">D</th>
+                      <th className="px-4 py-3">GP</th>
+                      <th className="px-4 py-3">GC</th>
+                      <th className="px-4 py-3">SG</th>
+                      <th className="px-4 py-3">IDADE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!loading && pairRows.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-10 text-center text-sm text-white/60">
+                          Sem dados de duplas (verifique etapa/categoria e jogos played).
+                        </td>
+                      </tr>
+                    )}
+
+                    {pairRows.map((r) => (
+                      <tr
+                        key={r.pair_id}
+                        className={classNames("rk-fade", topRowTone(r.pos), "ring-1")}
+                        style={{ animationDelay: `${Math.min(r.pos, 12) * 10}ms` }}
+                      >
+                        <td className="px-4 py-3">
+                          <span className="inline-flex h-8 min-w-10 items-center justify-center gap-1 rounded-xl bg-[#1f2937] px-2 text-sm font-extrabold text-white ring-1 ring-white/10">
+                            {medalForPos(r.pos) && <span className="text-base leading-none">{medalForPos(r.pos)}</span>}
+                            <span>{r.pos}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-extrabold">{r.pair_label}</td>
+                        <td className="px-4 py-3 font-bold">{r.matches_played}</td>
+                        <td className="px-4 py-3 font-extrabold text-emerald-200">{r.wins}</td>
+                        <td className="px-4 py-3 font-extrabold text-orange-200">{r.losses}</td>
+                        <td className="px-4 py-3 font-bold">{r.games_for}</td>
+                        <td className="px-4 py-3 font-bold">{r.games_against}</td>
+                        <td className="px-4 py-3 font-extrabold">{r.games_diff >= 0 ? `+${r.games_diff}` : r.games_diff}</td>
+                        <td className="px-4 py-3">{r.age_sum ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : tab === "stage" ? (
                 <table className="min-w-[980px] w-full text-left">
                   <thead className="bg-[#0f172a] text-xs font-bold text-white/60">
                     <tr className="border-b border-white/10">
@@ -724,7 +896,9 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
             </div>
 
             <div className="border-t border-white/10 px-4 py-3 text-xs text-white/50">
-              * Ranking somente por atleta. Jogos considerados: status <b>played</b>.
+              {tab === "pairs"
+                ? <>* Ranking por dupla da etapa. Jogos considerados: status <b>played</b>.</>
+                : <>* Ranking somente por atleta. Jogos considerados: status <b>played</b>.</>}
             </div>
           </div>
 
