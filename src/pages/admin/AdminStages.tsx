@@ -41,6 +41,11 @@ type DeepDeleteResult = {
   deleted_stages: number
 }
 
+type GarbageCheckRow = {
+  check_name: string
+  qtd: number
+}
+
 function toIsoOrNull(v: string) {
   const s = (v ?? "").trim()
   if (!s) return null
@@ -61,12 +66,14 @@ function fmtTs(v: string | null | undefined) {
 
 export default function AdminStages() {
   const [loading, setLoading] = useState(false)
+  const [checkingGarbage, setCheckingGarbage] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   const [seasons, setSeasons] = useState<SeasonRow[]>([])
   const [clubs, setClubs] = useState<ClubRow[]>([])
   const [rows, setRows] = useState<StageRow[]>([])
+  const [garbageRows, setGarbageRows] = useState<GarbageCheckRow[]>([])
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState({
@@ -102,6 +109,14 @@ export default function AdminStages() {
     }
     return (s: StageStatus) => map[s] ?? s
   }, [])
+
+  const garbageTotal = useMemo(() => {
+    return garbageRows.reduce((acc, row) => acc + Number(row.qtd || 0), 0)
+  }, [garbageRows])
+
+  const garbageHasIssues = useMemo(() => {
+    return garbageRows.some((row) => Number(row.qtd || 0) > 0)
+  }, [garbageRows])
 
   async function getNextStageNo(seasonId: string): Promise<number> {
     if (!seasonId) return 1
@@ -342,13 +357,54 @@ export default function AdminStages() {
     }
   }
 
+  async function checkStageGarbage() {
+    setCheckingGarbage(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const { data, error } = await supabase.rpc("admin_check_stage_garbage")
+
+      if (error) throw error
+
+      const rows = (data ?? []) as GarbageCheckRow[]
+      setGarbageRows(rows)
+
+      const total = rows.reduce((acc, row) => acc + Number(row.qtd || 0), 0)
+
+      if (total === 0) {
+        setSuccess("Verificação concluída: nenhuma sujeira de etapas encontrada.")
+      } else {
+        setSuccess(`Verificação concluída: ${total} ocorrência(s) de sujeira encontrada(s).`)
+      }
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+      setGarbageRows([])
+    } finally {
+      setCheckingGarbage(false)
+    }
+  }
+
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-lg font-semibold">Admin • Etapas</h1>
-        <button className="btn btn-secondary" onClick={() => void startCreate()} disabled={loading}>
-          Nova etapa
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            className="btn btn-secondary"
+            onClick={() => void checkStageGarbage()}
+            disabled={loading || checkingGarbage}
+          >
+            {checkingGarbage ? "Verificando sujeira..." : "Verificar sujeira do BD"}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => void startCreate()}
+            disabled={loading || checkingGarbage}
+          >
+            Nova etapa
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -360,6 +416,57 @@ export default function AdminStages() {
       {success && (
         <div className="rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-emerald-200 text-sm">
           {success}
+        </div>
+      )}
+
+      {garbageRows.length > 0 && (
+        <div
+          className={`rounded-xl border p-4 ${
+            garbageHasIssues
+              ? "border-amber-700 bg-amber-950/30"
+              : "border-emerald-700 bg-emerald-950/20"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+            <div className="font-semibold">
+              Diagnóstico de sujeira de etapas
+            </div>
+            <div
+              className={`text-sm font-medium ${
+                garbageHasIssues ? "text-amber-200" : "text-emerald-200"
+              }`}
+            >
+              Total de ocorrências: {garbageTotal}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-[700px] w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-300">
+                  <th className="py-2">Verificação</th>
+                  <th className="py-2 text-right">Qtd</th>
+                </tr>
+              </thead>
+              <tbody>
+                {garbageRows.map((row) => {
+                  const hasIssue = Number(row.qtd || 0) > 0
+                  return (
+                    <tr key={row.check_name} className="border-t border-white/10">
+                      <td className="py-2">{row.check_name}</td>
+                      <td
+                        className={`py-2 text-right font-medium ${
+                          hasIssue ? "text-amber-300" : "text-emerald-300"
+                        }`}
+                      >
+                        {row.qtd}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -466,11 +573,15 @@ export default function AdminStages() {
         </div>
 
         <div className="flex gap-2">
-          <button className="btn btn-primary" onClick={save} disabled={loading}>
+          <button className="btn btn-primary" onClick={save} disabled={loading || checkingGarbage}>
             {editingId ? "Salvar alterações" : "Criar etapa"}
           </button>
           {editingId && (
-            <button className="btn btn-secondary" onClick={() => void startCreate()} disabled={loading}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => void startCreate()}
+              disabled={loading || checkingGarbage}
+            >
               Cancelar
             </button>
           )}
@@ -509,13 +620,25 @@ export default function AdminStages() {
                   <td className="py-2">{formatDateBR(r.starts_on) || "—"}</td>
                   <td className="py-2 text-right">
                     <div className="flex justify-end gap-2 flex-wrap">
-                      <button className="btn btn-secondary" onClick={() => startEdit(r)} disabled={loading}>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => startEdit(r)}
+                        disabled={loading || checkingGarbage}
+                      >
                         Editar
                       </button>
-                      <button className="btn btn-danger" onClick={() => remove(r.id)} disabled={loading}>
+                      <button
+                        className="btn btn-danger"
+                        onClick={() => remove(r.id)}
+                        disabled={loading || checkingGarbage}
+                      >
                         Remover
                       </button>
-                      <button className="btn btn-danger" onClick={() => void removeDeep(r)} disabled={loading}>
+                      <button
+                        className="btn btn-danger"
+                        onClick={() => void removeDeep(r)}
+                        disabled={loading || checkingGarbage}
+                      >
                         Exclusão do BD
                       </button>
                     </div>
