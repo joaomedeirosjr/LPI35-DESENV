@@ -1445,7 +1445,7 @@ export default function AdminRounds() {
                             <input
                               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
                               value={qty}
-                              onChange={(e) => setPairsQty(g.id, e.target.value ? Number(e.target.value) : 0)}
+                              onChange={(e) => setPairsQty(g.id, e.target.value ? Number(e.target.value) : 6)}
                               inputMode="numeric"
                               disabled={loading || !roundId}
                             />
