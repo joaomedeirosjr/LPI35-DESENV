@@ -48,6 +48,17 @@ function MenuItem({
   )
 }
 
+function PlaceholderPage({ title }: { title: string }) {
+  return (
+    <div className="card space-y-3">
+      <h1 className="text-xl font-bold">{title}</h1>
+      <p className="text-slate-300 text-sm">
+        Página em preparação.
+      </p>
+    </div>
+  )
+}
+
 export default function AdminLayout() {
   const nav = useNavigate()
   const loc = useLocation()
@@ -58,6 +69,7 @@ export default function AdminLayout() {
   }
 
   const athleteBase = "/admin/athlete"
+
   const athletePaths = useMemo(
     () => [
       `${athleteBase}/presenca`,
@@ -77,16 +89,25 @@ export default function AdminLayout() {
       "/admin/rounds",
       "/admin/stage-participants",
       "/admin/invite",
+    ],
+    []
+  )
+
+  const registryPaths = useMemo(
+    () => [
       "/admin/approve",
+      "/admin/athlete-registry",
     ],
     []
   )
 
   const isInAthlete = athletePaths.some((p) => loc.pathname.startsWith(p))
   const isInAdminArea = adminPaths.some((p) => loc.pathname.startsWith(p))
+  const isInRegistryArea = registryPaths.some((p) => loc.pathname.startsWith(p))
 
   const [athleteOpen, setAthleteOpen] = useState<boolean>(isInAthlete)
   const [adminAreaOpen, setAdminAreaOpen] = useState<boolean>(isInAdminArea)
+  const [registryOpen, setRegistryOpen] = useState<boolean>(isInRegistryArea)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -96,6 +117,10 @@ export default function AdminLayout() {
   useEffect(() => {
     setAdminAreaOpen(isInAdminArea)
   }, [isInAdminArea])
+
+  useEffect(() => {
+    setRegistryOpen(isInRegistryArea)
+  }, [isInRegistryArea])
 
   useEffect(() => {
     setMobileMenuOpen(false)
@@ -162,7 +187,30 @@ export default function AdminLayout() {
               onClick={closeMobileMenu}
             />
             <MenuItem to="/admin/invite" label="Gerar Convite" onClick={closeMobileMenu} />
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <button
+          type="button"
+          onClick={() => setRegistryOpen((v) => !v)}
+          className="w-full text-left"
+          aria-expanded={registryOpen}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-slate-300">Usuários</div>
+              <div className="text-lg font-extrabold">CADASTRO DE ATLETAS</div>
+            </div>
+            <div className="text-xs text-slate-300">{registryOpen ? "▲" : "▼"}</div>
+          </div>
+        </button>
+
+        {registryOpen && (
+          <div className="mt-3 space-y-2">
             <MenuItem to="/admin/approve" label="Aprovar Atletas" onClick={closeMobileMenu} />
+            <MenuItem to="/admin/athlete-registry" label="Excluir Cadastro" onClick={closeMobileMenu} />
           </div>
         )}
       </div>
@@ -296,6 +344,11 @@ export default function AdminLayout() {
                 <Route path="/invite" element={<AdminInvite />} />
                 <Route path="/approve" element={<AdminApproveUsers />} />
                 <Route path="/profile" element={<AdminProfile />} />
+
+                <Route
+                  path="/athlete-registry"
+                  element={<PlaceholderPage title="Excluir Cadastro" />}
+                />
 
                 <Route path="/athlete/presenca" element={<AdminAthletePresencePage />} />
                 <Route path="/athlete/rodada" element={<AdminAthleteRoundsPage />} />
