@@ -261,7 +261,7 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen w-full bg-gripoBlue text-white">
       <div className="sticky top-0 z-30 w-full border-b border-white/10 bg-gripoBlue/95 backdrop-blur">
-        <div className="w-full px-4 md:px-6 py-4 md:py-5">
+        <div className="w-full px-4 md:px-6 py-3.5 md:py-4">
           <div className="max-w-[1400px] mx-auto">
             <div className="flex items-center gap-3">
               <button
@@ -275,24 +275,24 @@ export default function AdminLayout() {
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-center">
-                  <div className="flex items-center gap-3 md:gap-6 max-w-full">
+                  <div className="flex items-center gap-3 md:gap-4 max-w-full">
                     <img
                       src="/icons/logo-white-transparent.png"
                       alt="Liga de Padel Ibirubense 35++"
-                      className="h-14 md:h-20 w-auto object-contain shrink-0 drop-shadow-[0_0_12px_rgba(255,255,255,0.08)]"
+                      className="h-11 sm:h-12 md:h-14 w-auto object-contain shrink-0 drop-shadow-[0_0_10px_rgba(255,255,255,0.08)]"
                     />
 
                     <div className="min-w-0 text-center">
-                      <div className="text-[1.05rem] sm:text-[1.2rem] md:text-[1.9rem] font-extrabold tracking-tight leading-[1.05] text-white">
-                        <span className="block">Liga de Padel</span>
-                        <span className="block">Ibirubense 35++</span>
+                      <div className="text-[1rem] sm:text-[1.08rem] md:text-[1.45rem] font-extrabold tracking-tight leading-[1.02] text-white">
+                        <span className="block md:inline">Liga de Padel </span>
+                        <span className="block md:inline">Ibirubense 35++</span>
                       </div>
 
-                      <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
-                        <div className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-slate-300">
+                      <div className="mt-1.5 flex items-center justify-center gap-2 flex-wrap">
+                        <div className="text-[10px] md:text-[11px] uppercase tracking-[0.18em] text-slate-300">
                           Painel administrativo
                         </div>
-                        <span className="inline-flex items-center rounded-full border border-gripoOrange/35 bg-gripoOrange/15 px-2.5 py-1 text-[10px] md:text-[11px] font-bold uppercase tracking-[0.16em] text-orange-100">
+                        <span className="inline-flex items-center rounded-full border border-gripoOrange/35 bg-gripoOrange/15 px-2 py-[4px] text-[9px] md:text-[10px] font-bold uppercase tracking-[0.14em] text-orange-100">
                           Admin Dev
                         </span>
                       </div>
