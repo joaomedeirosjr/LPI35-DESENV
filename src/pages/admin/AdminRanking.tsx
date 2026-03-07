@@ -125,9 +125,6 @@ function topRowTone(pos: number) {
   return "ring-white/10";
 }
 
-/**
- * Modal (Admin) — detalhes do atleta na etapa (jogos played)
- */
 function PlayerDetailsModal({
   open,
   onClose,
@@ -209,7 +206,7 @@ function PlayerDetailsModal({
               </div>
             )}
 
-            <div className="overflow-auto rounded-xl border border-white/10">
+            <div className="overflow-x-auto rounded-xl border border-white/10">
               <table className="min-w-[920px] w-full text-left">
                 <thead className="bg-[#0f172a] text-xs font-bold text-white/60">
                   <tr className="border-b border-white/10">
@@ -692,96 +689,100 @@ export default function AdminRanking() {
   }, [selectedSeason?.name, tab, selectedStage?.name, stageId, category]);
 
   return (
-    <div className="min-h-screen bg-[#0b1220] text-white">
+    <div className="w-full text-white">
       <div className="sticky top-0 z-20 border-b border-white/10 bg-[#0b1220]/80 backdrop-blur no-print">
-        <div className="mx-auto max-w-6xl px-4 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-white">Ranking</h1>
-                <Badge tone="success">35++</Badge>
+        <div className="mx-auto w-full max-w-6xl px-4 py-4">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-bold text-white">Ranking</h1>
+                  <Badge tone="success">35++</Badge>
+                </div>
+                <p className="mt-1 text-sm text-white/60">
+                  {tab === "pairs"
+                    ? "Classificação oficial por dupla da etapa"
+                    : tab === "stage"
+                    ? "Ranking por etapa (saldo games, games pró, confronto direto (empate de 2), idade)"
+                    : "Ranking geral por temporada (soma pontos das etapas)"}
+                </p>
               </div>
-              <p className="text-sm text-white/60">
-                {tab === "pairs"
-                  ? "Classificação oficial por dupla da etapa"
-                  : tab === "stage"
-                  ? "Ranking por etapa (saldo games, games pró, confronto direto (empate de 2), idade)"
-                  : "Ranking geral por temporada (soma pontos das etapas)"}
-              </p>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <span
-                className={classNames(
-                  "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-extrabold ring-1",
-                  liveStatus === "live"
-                    ? "bg-emerald-500/15 text-emerald-200 ring-emerald-500/25"
-                    : liveStatus === "connecting"
-                    ? "bg-amber-500/15 text-amber-200 ring-amber-500/25"
-                    : liveStatus === "error"
-                    ? "bg-rose-500/15 text-rose-200 ring-rose-500/25"
-                    : "bg-white/10 text-white/70 ring-white/10"
-                )}
-                title={
-                  liveStatus === "live"
-                    ? "Conectado (atualização automática ativa)"
-                    : liveStatus === "connecting"
-                    ? "Conectando…"
-                    : liveStatus === "error"
-                    ? "Falha no realtime (verifique Realtime habilitado para matches)"
-                    : "Desconectado"
-                }
-              >
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={classNames(
-                    "h-2 w-2 rounded-full",
+                    "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-extrabold ring-1",
                     liveStatus === "live"
-                      ? "bg-emerald-400"
+                      ? "bg-emerald-500/15 text-emerald-200 ring-emerald-500/25"
                       : liveStatus === "connecting"
-                      ? "bg-amber-400"
+                      ? "bg-amber-500/15 text-amber-200 ring-amber-500/25"
                       : liveStatus === "error"
-                      ? "bg-rose-400"
-                      : "bg-white/40"
+                      ? "bg-rose-500/15 text-rose-200 ring-rose-500/25"
+                      : "bg-white/10 text-white/70 ring-white/10"
                   )}
-                />
-                {liveStatus === "live"
-                  ? "Ao vivo"
-                  : liveStatus === "connecting"
-                  ? "Conectando"
-                  : liveStatus === "error"
-                  ? "Realtime erro"
-                  : "Offline"}
-              </span>
-            </div>
+                  title={
+                    liveStatus === "live"
+                      ? "Conectado (atualização automática ativa)"
+                      : liveStatus === "connecting"
+                      ? "Conectando…"
+                      : liveStatus === "error"
+                      ? "Falha no realtime (verifique Realtime habilitado para matches)"
+                      : "Desconectado"
+                  }
+                >
+                  <span
+                    className={classNames(
+                      "h-2 w-2 rounded-full",
+                      liveStatus === "live"
+                        ? "bg-emerald-400"
+                        : liveStatus === "connecting"
+                        ? "bg-amber-400"
+                        : liveStatus === "error"
+                        ? "bg-rose-400"
+                        : "bg-white/40"
+                    )}
+                  />
+                  {liveStatus === "live"
+                    ? "Ao vivo"
+                    : liveStatus === "connecting"
+                    ? "Conectando"
+                    : liveStatus === "error"
+                    ? "Realtime erro"
+                    : "Offline"}
+                </span>
+              </div>
 
-            <div className="inline-flex rounded-2xl bg-white/10 p-1 ring-1 ring-white/10">
-              <button
-                className={classNames(
-                  "rounded-2xl px-4 py-2 text-sm font-bold transition",
-                  tab === "pairs" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
-                )}
-                onClick={() => setTab("pairs")}
-              >
-                Por Dupla
-              </button>
-              <button
-                className={classNames(
-                  "rounded-2xl px-4 py-2 text-sm font-bold transition",
-                  tab === "stage" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
-                )}
-                onClick={() => setTab("stage")}
-              >
-                Por Etapa
-              </button>
-              <button
-                className={classNames(
-                  "rounded-2xl px-4 py-2 text-sm font-bold transition",
-                  tab === "season" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
-                )}
-                onClick={() => setTab("season")}
-              >
-                Por Temporada
-              </button>
+              <div className="overflow-x-auto">
+                <div className="inline-flex min-w-max rounded-2xl bg-white/10 p-1 ring-1 ring-white/10">
+                  <button
+                    className={classNames(
+                      "rounded-2xl px-4 py-2 text-sm font-bold transition whitespace-nowrap",
+                      tab === "pairs" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
+                    )}
+                    onClick={() => setTab("pairs")}
+                  >
+                    Por Dupla
+                  </button>
+                  <button
+                    className={classNames(
+                      "rounded-2xl px-4 py-2 text-sm font-bold transition whitespace-nowrap",
+                      tab === "stage" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
+                    )}
+                    onClick={() => setTab("stage")}
+                  >
+                    Por Etapa
+                  </button>
+                  <button
+                    className={classNames(
+                      "rounded-2xl px-4 py-2 text-sm font-bold transition whitespace-nowrap",
+                      tab === "season" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
+                    )}
+                    onClick={() => setTab("season")}
+                  >
+                    Por Temporada
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -822,21 +823,23 @@ export default function AdminRanking() {
 
             <div className="md:col-span-3">
               <label className="block text-xs font-semibold text-white/80">Categoria</label>
-              <div className="mt-1 grid grid-cols-4 gap-2">
-                {(["A", "B", "C", "D"] as Category[]).map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setCategory(c)}
-                    className={classNames(
-                      "rounded-2xl px-3 py-2 text-sm font-extrabold ring-1 transition",
-                      category === c
-                        ? "bg-orange-500 text-white ring-orange-500 shadow-sm"
-                        : "bg-[#0f172a] text-white/80 ring-white/10 hover:bg-white/5"
-                    )}
-                  >
-                    {c}
-                  </button>
-                ))}
+              <div className="mt-1 overflow-x-auto">
+                <div className="inline-flex min-w-max gap-2">
+                  {(["A", "B", "C", "D"] as Category[]).map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setCategory(c)}
+                      className={classNames(
+                        "min-w-[110px] rounded-2xl px-4 py-2 text-sm font-extrabold ring-1 transition",
+                        category === c
+                          ? "bg-orange-500 text-white ring-orange-500 shadow-sm"
+                          : "bg-[#0f172a] text-white/80 ring-white/10 hover:bg-white/5"
+                      )}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -865,7 +868,7 @@ export default function AdminRanking() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl px-4 py-6">
+      <div className="mx-auto w-full max-w-6xl px-4 py-6">
         <div className="rounded-3xl border border-white/10 bg-[#111827] shadow-sm overflow-hidden">
           {tab === "pairs" && (
             <div className="print-only print-root">
@@ -1002,33 +1005,35 @@ export default function AdminRanking() {
             </div>
           )}
 
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 no-print">
-            <div className="text-sm font-bold text-white">
-              {tab === "pairs" ? "Classificação das Duplas da Etapa" : tab === "stage" ? "Tabela da Etapa" : "Ranking da Temporada"}
-            </div>
+          <div className="border-b border-white/10 px-4 py-3 no-print">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm font-bold text-white">
+                {tab === "pairs" ? "Classificação das Duplas da Etapa" : tab === "stage" ? "Tabela da Etapa" : "Ranking da Temporada"}
+              </div>
 
-            <div className="flex items-center gap-2">
-              {tab === "pairs" && (
+              <div className="flex flex-wrap items-center gap-2">
+                {tab === "pairs" && (
+                  <button
+                    onClick={handlePrintPairsPdf}
+                    className="rounded-2xl bg-orange-500 px-4 py-2 text-sm font-extrabold text-white shadow-sm hover:bg-orange-400 disabled:opacity-60"
+                    disabled={loadingData || !pairRows.length}
+                  >
+                    Exportar PDF
+                  </button>
+                )}
+
                 <button
-                  onClick={handlePrintPairsPdf}
-                  className="rounded-2xl bg-orange-500 px-4 py-2 text-sm font-extrabold text-white shadow-sm hover:bg-orange-400 disabled:opacity-60"
-                  disabled={loadingData || !pairRows.length}
+                  onClick={fetchRanking}
+                  className="rounded-2xl bg-[#1f2937] px-4 py-2 text-sm font-extrabold text-white shadow-sm hover:bg-[#374151] disabled:opacity-60"
+                  disabled={loadingData}
                 >
-                  Exportar PDF
+                  {loadingData ? "Atualizando..." : "Atualizar"}
                 </button>
-              )}
-
-              <button
-                onClick={fetchRanking}
-                className="rounded-2xl bg-[#1f2937] px-4 py-2 text-sm font-extrabold text-white shadow-sm hover:bg-[#374151] disabled:opacity-60"
-                disabled={loadingData}
-              >
-                {loadingData ? "Atualizando..." : "Atualizar"}
-              </button>
+              </div>
             </div>
           </div>
 
-          <div className="overflow-auto">
+          <div className="overflow-x-auto">
             {tab === "pairs" ? (
               <table className="min-w-[980px] w-full text-left">
                 <thead className="sticky top-0 z-10 bg-[#0f172a]">
