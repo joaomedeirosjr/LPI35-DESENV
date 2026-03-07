@@ -823,24 +823,24 @@ export default function AdminRanking() {
 
             <div className="md:col-span-3">
               <label className="block text-xs font-semibold text-white/80">Categoria</label>
-              <div className="mt-1 overflow-x-auto">
-                <div className="inline-flex min-w-max gap-2">
-                  {(["A", "B", "C", "D"] as Category[]).map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => setCategory(c)}
-                      className={classNames(
-                        "min-w-[110px] rounded-2xl px-4 py-2 text-sm font-extrabold ring-1 transition",
-                        category === c
-                          ? "bg-orange-500 text-white ring-orange-500 shadow-sm"
-                          : "bg-[#0f172a] text-white/80 ring-white/10 hover:bg-white/5"
-                      )}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                <div className="mt-1">
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["A", "B", "C", "D"] as Category[]).map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => setCategory(c)}
+                        className={classNames(
+                         "rounded-2xl px-3 py-2 text-sm font-extrabold ring-1 transition",
+                       category === c
+                         ? "bg-orange-500 text-white ring-orange-500 shadow-sm"
+                         : "bg-[#0f172a] text-white/80 ring-white/10 hover:bg-white/5"
+        )}
+      >
+        {c}
+      </button>
+    ))}
+  </div>
+</div>
             </div>
           </div>
 
