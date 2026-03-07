@@ -8,7 +8,7 @@ import AdminRanking from "./AdminRanking"
 import AdminInvite from "./AdminInvite"
 import AdminApproveUsers from "./AdminApproveUsers"
 import AdminProfile from "./AdminProfile"
-
+import AdminAthleteRegistry from "./AdminAthleteRegistry" 
 import AdminSeasons from "./AdminSeasons"
 import AdminClubs from "./AdminClubs"
 import AdminStages from "./AdminStages"
@@ -344,17 +344,11 @@ export default function AdminLayout() {
                 <Route path="/invite" element={<AdminInvite />} />
                 <Route path="/approve" element={<AdminApproveUsers />} />
                 <Route path="/profile" element={<AdminProfile />} />
-
-                <Route
-                  path="/athlete-registry"
-                  element={<PlaceholderPage title="Excluir Cadastro" />}
-                />
-
+                <Route path="/athlete-registry" element={<AdminAthleteRegistry />}/>
                 <Route path="/athlete/presenca" element={<AdminAthletePresencePage />} />
                 <Route path="/athlete/rodada" element={<AdminAthleteRoundsPage />} />
                 <Route path="/athlete/ranking" element={<RankingPublic embedded />} />
                 <Route path="/athlete/analytics" element={<AdminAthleteAnalyticsPage />} />
-
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>
             </main>
