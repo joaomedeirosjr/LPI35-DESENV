@@ -10,6 +10,13 @@
     color-scheme: dark;
   }
 
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    background: #0f2747;
+  }
+
   body {
     @apply bg-gripoBlue text-white;
   }
@@ -56,7 +63,7 @@
            text-white;
   }
 
-  /* ✅ Secondary (AZUL) — usar no "Confirmar" */
+  /* Secondary (AZUL) */
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2
            px-4 py-2 rounded-xl transition
@@ -84,7 +91,7 @@
     background-color: #b91c1c !important;
   }
 
-  /* Disabled (pra todos) */
+  /* Disabled */
   .btn:disabled,
   .btn-primary:disabled,
   .btn-secondary:disabled,
@@ -131,6 +138,68 @@ textarea:focus {
 }
 
 /* ============================= */
+/*  SPLASH SCREEN                */
+/* ============================= */
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #0f2747 0%, #0b1f38 100%);
+  transition:
+    opacity 0.35s ease,
+    visibility 0.35s ease,
+    transform 0.35s ease;
+}
+
+.app-splash.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.app-splash.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(1.01);
+  pointer-events: none;
+}
+
+.app-splash__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.app-splash__icon {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  border-radius: 22px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+.app-splash__title {
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.app-splash__subtitle {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+/* ============================= */
 /*  MOBILE COMPACT TUNING        */
 /* ============================= */
 @media (max-width: 480px) {
@@ -148,5 +217,19 @@ textarea:focus {
     .input {
       @apply px-3 py-2 text-sm;
     }
+  }
+
+  .app-splash__icon {
+    width: 84px;
+    height: 84px;
+    border-radius: 20px;
+  }
+
+  .app-splash__title {
+    font-size: 1.3rem;
+  }
+
+  .app-splash__subtitle {
+    font-size: 0.88rem;
   }
 }
