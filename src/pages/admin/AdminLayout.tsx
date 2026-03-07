@@ -174,27 +174,29 @@ export default function AdminLayout() {
   )
 
   return (
-    <div className="min-h-screen bg-gripoBlue text-white">
-      <div className="sticky top-0 z-30 border-b border-white/10 bg-gripoBlue/90 backdrop-blur">
-        <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-4">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Abrir menu"
-            >
-              <span className="text-xl leading-none">☰</span>
-            </button>
+    <div className="min-h-screen w-full bg-gripoBlue text-white">
+      <div className="sticky top-0 z-30 w-full border-b border-white/10 bg-gripoBlue/90 backdrop-blur">
+        <div className="w-full px-4 md:px-6 py-4">
+          <div className="max-w-[1400px] mx-auto">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Abrir menu"
+              >
+                <span className="text-xl leading-none">☰</span>
+              </button>
 
-            <div className="min-w-0 flex-1 text-center md:text-center">
-              <div className="text-2xl md:text-3xl font-extrabold tracking-tight">
-                Liga de Padel Ibirubense 35++
+              <div className="min-w-0 flex-1 text-center">
+                <div className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                  Liga de Padel Ibirubense 35++
+                </div>
+                <div className="text-xs text-slate-300">Admin DEV</div>
               </div>
-              <div className="text-xs text-slate-300">Admin DEV</div>
-            </div>
 
-            <div className="md:hidden w-10" />
+              <div className="md:hidden w-10" />
+            </div>
           </div>
         </div>
       </div>
@@ -228,34 +230,36 @@ export default function AdminLayout() {
         </>
       )}
 
-      <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-4 md:py-6">
-        <div className="grid gap-6 md:grid-cols-[280px_1fr]">
-          <aside className="hidden md:block space-y-4">
-            {sidebarContent}
-          </aside>
+      <div className="w-full px-4 md:px-6 py-4 md:py-6">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="grid gap-6 md:grid-cols-[280px_1fr]">
+            <aside className="hidden md:block space-y-4">
+              {sidebarContent}
+            </aside>
 
-          <main className="min-h-[520px]">
-            <Routes>
-              <Route path="/" element={<AdminDashboard />} />
-              <Route path="/seasons" element={<AdminSeasons />} />
-              <Route path="/clubs" element={<AdminClubs />} />
-              <Route path="/stages" element={<AdminStages />} />
-              <Route path="/guests" element={<AdminGuests />} />
-              <Route path="/rounds" element={<AdminRounds />} />
-              <Route path="/ranking" element={<AdminRanking />} />
-              <Route path="/stage-participants" element={<AdminStageParticipants />} />
-              <Route path="/invite" element={<AdminInvite />} />
-              <Route path="/approve" element={<AdminApproveUsers />} />
-              <Route path="/profile" element={<AdminProfile />} />
+            <main className="min-h-[520px]">
+              <Routes>
+                <Route path="/" element={<AdminDashboard />} />
+                <Route path="/seasons" element={<AdminSeasons />} />
+                <Route path="/clubs" element={<AdminClubs />} />
+                <Route path="/stages" element={<AdminStages />} />
+                <Route path="/guests" element={<AdminGuests />} />
+                <Route path="/rounds" element={<AdminRounds />} />
+                <Route path="/ranking" element={<AdminRanking />} />
+                <Route path="/stage-participants" element={<AdminStageParticipants />} />
+                <Route path="/invite" element={<AdminInvite />} />
+                <Route path="/approve" element={<AdminApproveUsers />} />
+                <Route path="/profile" element={<AdminProfile />} />
 
-              <Route path="/athlete/presenca" element={<AdminAthletePresencePage />} />
-              <Route path="/athlete/rodada" element={<AdminAthleteRoundsPage />} />
-              <Route path="/athlete/ranking" element={<RankingPublic embedded />} />
-              <Route path="/athlete/analytics" element={<AdminAthleteAnalyticsPage />} />
+                <Route path="/athlete/presenca" element={<AdminAthletePresencePage />} />
+                <Route path="/athlete/rodada" element={<AdminAthleteRoundsPage />} />
+                <Route path="/athlete/ranking" element={<RankingPublic embedded />} />
+                <Route path="/athlete/analytics" element={<AdminAthleteAnalyticsPage />} />
 
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </Routes>
-          </main>
+                <Route path="*" element={<Navigate to="/admin" replace />} />
+              </Routes>
+            </main>
+          </div>
         </div>
       </div>
     </div>
