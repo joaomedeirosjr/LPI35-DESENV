@@ -8,7 +8,8 @@ import AdminRanking from "./AdminRanking"
 import AdminInvite from "./AdminInvite"
 import AdminApproveUsers from "./AdminApproveUsers"
 import AdminProfile from "./AdminProfile"
-import AdminAthleteRegistry from "./AdminAthleteRegistry" 
+import AdminAthleteRegistry from "./AdminAthleteRegistry"
+
 import AdminSeasons from "./AdminSeasons"
 import AdminClubs from "./AdminClubs"
 import AdminStages from "./AdminStages"
@@ -45,17 +46,6 @@ function MenuItem({
     >
       {label}
     </NavLink>
-  )
-}
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="card space-y-3">
-      <h1 className="text-xl font-bold">{title}</h1>
-      <p className="text-slate-300 text-sm">
-        Página em preparação.
-      </p>
-    </div>
   )
 }
 
@@ -344,11 +334,13 @@ export default function AdminLayout() {
                 <Route path="/invite" element={<AdminInvite />} />
                 <Route path="/approve" element={<AdminApproveUsers />} />
                 <Route path="/profile" element={<AdminProfile />} />
-                <Route path="/athlete-registry" element={<AdminAthleteRegistry />}/>
+                <Route path="/athlete-registry" element={<AdminAthleteRegistry />} />
+
                 <Route path="/athlete/presenca" element={<AdminAthletePresencePage />} />
                 <Route path="/athlete/rodada" element={<AdminAthleteRoundsPage />} />
                 <Route path="/athlete/ranking" element={<RankingPublic embedded />} />
                 <Route path="/athlete/analytics" element={<AdminAthleteAnalyticsPage />} />
+
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>
             </main>
