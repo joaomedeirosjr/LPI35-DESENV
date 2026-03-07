@@ -68,13 +68,34 @@ export default function AdminLayout() {
     []
   )
 
+  const adminPaths = useMemo(
+    () => [
+      "/admin/seasons",
+      "/admin/clubs",
+      "/admin/stages",
+      "/admin/guests",
+      "/admin/rounds",
+      "/admin/stage-participants",
+      "/admin/invite",
+      "/admin/approve",
+    ],
+    []
+  )
+
   const isInAthlete = athletePaths.some((p) => loc.pathname.startsWith(p))
+  const isInAdminArea = adminPaths.some((p) => loc.pathname.startsWith(p))
+
   const [athleteOpen, setAthleteOpen] = useState<boolean>(isInAthlete)
+  const [adminAreaOpen, setAdminAreaOpen] = useState<boolean>(isInAdminArea)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     setAthleteOpen(isInAthlete)
   }, [isInAthlete])
+
+  useEffect(() => {
+    setAdminAreaOpen(isInAdminArea)
+  }, [isInAdminArea])
 
   useEffect(() => {
     setMobileMenuOpen(false)
@@ -105,6 +126,45 @@ export default function AdminLayout() {
       <div className="card">
         <div className="text-xs text-slate-300">Navegação</div>
         <div className="text-lg font-bold">Painel</div>
+      </div>
+
+      <div className="space-y-2">
+        <MenuItem to="/admin" label="Dashboard" onClick={closeMobileMenu} />
+        <MenuItem to="/admin/ranking" label="Ranking" onClick={closeMobileMenu} />
+      </div>
+
+      <div className="card">
+        <button
+          type="button"
+          onClick={() => setAdminAreaOpen((v) => !v)}
+          className="w-full text-left"
+          aria-expanded={adminAreaOpen}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-slate-300">Operações</div>
+              <div className="text-lg font-extrabold">ÁREA DO ADMIN</div>
+            </div>
+            <div className="text-xs text-slate-300">{adminAreaOpen ? "▲" : "▼"}</div>
+          </div>
+        </button>
+
+        {adminAreaOpen && (
+          <div className="mt-3 space-y-2">
+            <MenuItem to="/admin/seasons" label="Temporadas" onClick={closeMobileMenu} />
+            <MenuItem to="/admin/clubs" label="Clubes" onClick={closeMobileMenu} />
+            <MenuItem to="/admin/stages" label="Etapas" onClick={closeMobileMenu} />
+            <MenuItem to="/admin/guests" label="Convidados" onClick={closeMobileMenu} />
+            <MenuItem to="/admin/rounds" label="Rodadas" onClick={closeMobileMenu} />
+            <MenuItem
+              to="/admin/stage-participants"
+              label="Participantes por Etapa"
+              onClick={closeMobileMenu}
+            />
+            <MenuItem to="/admin/invite" label="Gerar Convite" onClick={closeMobileMenu} />
+            <MenuItem to="/admin/approve" label="Aprovar Atletas" onClick={closeMobileMenu} />
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -150,20 +210,6 @@ export default function AdminLayout() {
       </div>
 
       <div className="space-y-2">
-        <MenuItem to="/admin" label="Dashboard" onClick={closeMobileMenu} />
-        <MenuItem to="/admin/seasons" label="Temporadas" onClick={closeMobileMenu} />
-        <MenuItem to="/admin/clubs" label="Clubes" onClick={closeMobileMenu} />
-        <MenuItem to="/admin/stages" label="Etapas" onClick={closeMobileMenu} />
-        <MenuItem to="/admin/guests" label="Convidados" onClick={closeMobileMenu} />
-        <MenuItem to="/admin/rounds" label="Rodadas" onClick={closeMobileMenu} />
-        <MenuItem to="/admin/ranking" label="Ranking" onClick={closeMobileMenu} />
-        <MenuItem
-          to="/admin/stage-participants"
-          label="Participantes por Etapa"
-          onClick={closeMobileMenu}
-        />
-        <MenuItem to="/admin/invite" label="Gerar Convite" onClick={closeMobileMenu} />
-        <MenuItem to="/admin/approve" label="Aprovar Atletas" onClick={closeMobileMenu} />
         <MenuItem to="/admin/profile" label="Meu Perfil" onClick={closeMobileMenu} />
       </div>
 
