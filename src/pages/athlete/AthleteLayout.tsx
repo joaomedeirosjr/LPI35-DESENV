@@ -121,7 +121,7 @@ export default function AthleteLayout() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white"
+                className="md:hidden mt-1 inline-flex items-center justify-center w-10 h-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white"
                 onClick={() => setMobileMenuOpen(true)}
                 aria-label="Abrir menu"
               >
