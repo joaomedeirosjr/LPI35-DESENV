@@ -8,13 +8,22 @@
 @layer base {
   html {
     color-scheme: dark;
-  }
-
-  html,
-  body,
-  #root {
+    width: 100%;
+    min-width: 100%;
     min-height: 100%;
     background: #0f2747;
+    overflow-x: hidden;
+  }
+
+  body,
+  #root {
+    width: 100%;
+    min-width: 100%;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    background: #0f2747;
+    overflow-x: hidden;
   }
 
   body {
