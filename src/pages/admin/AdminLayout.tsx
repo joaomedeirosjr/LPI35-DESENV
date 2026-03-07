@@ -67,7 +67,7 @@ export default function AdminLayout() {
       `${athleteBase}/ranking`,
       `${athleteBase}/analytics`,
     ],
-    []
+    [athleteBase]
   )
 
   const adminPaths = useMemo(
@@ -84,10 +84,7 @@ export default function AdminLayout() {
   )
 
   const registryPaths = useMemo(
-    () => [
-      "/admin/approve",
-      "/admin/athlete-registry",
-    ],
+    () => ["/admin/approve", "/admin/athlete-registry"],
     []
   )
 
@@ -200,7 +197,11 @@ export default function AdminLayout() {
         {registryOpen && (
           <div className="mt-3 space-y-2">
             <MenuItem to="/admin/approve" label="Aprovar Atletas" onClick={closeMobileMenu} />
-            <MenuItem to="/admin/athlete-registry" label="Excluir Cadastro" onClick={closeMobileMenu} />
+            <MenuItem
+              to="/admin/athlete-registry"
+              label="Excluir Cadastro"
+              onClick={closeMobileMenu}
+            />
           </div>
         )}
       </div>
@@ -259,27 +260,48 @@ export default function AdminLayout() {
 
   return (
     <div className="min-h-screen w-full bg-gripoBlue text-white">
-      <div className="sticky top-0 z-30 w-full border-b border-white/10 bg-gripoBlue/90 backdrop-blur">
-        <div className="w-full px-4 md:px-6 py-4">
+      <div className="sticky top-0 z-30 w-full border-b border-white/10 bg-gripoBlue/95 backdrop-blur">
+        <div className="w-full px-4 md:px-6 py-4 md:py-5">
           <div className="max-w-[1400px] mx-auto">
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                className="md:hidden mt-1 inline-flex items-center justify-center w-10 h-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white"
+                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white shrink-0"
                 onClick={() => setMobileMenuOpen(true)}
                 aria-label="Abrir menu"
               >
                 <span className="text-xl leading-none">☰</span>
               </button>
 
-              <div className="min-w-0 flex-1 text-center">
-                <div className="text-2xl md:text-3xl font-extrabold tracking-tight">
-                  Liga de Padel Ibirubense 35++
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center gap-3 md:gap-6 max-w-full">
+                    <img
+                      src="/icons/logo-white-transparent.png"
+                      alt="Liga de Padel Ibirubense 35++"
+                      className="h-14 md:h-20 w-auto object-contain shrink-0 drop-shadow-[0_0_12px_rgba(255,255,255,0.08)]"
+                    />
+
+                    <div className="min-w-0 text-center">
+                      <div className="text-[1.05rem] sm:text-[1.2rem] md:text-[1.9rem] font-extrabold tracking-tight leading-[1.05] text-white">
+                        <span className="block">Liga de Padel</span>
+                        <span className="block">Ibirubense 35++</span>
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
+                        <div className="text-[10px] md:text-xs uppercase tracking-[0.22em] text-slate-300">
+                          Painel administrativo
+                        </div>
+                        <span className="inline-flex items-center rounded-full border border-gripoOrange/35 bg-gripoOrange/15 px-2.5 py-1 text-[10px] md:text-[11px] font-bold uppercase tracking-[0.16em] text-orange-100">
+                          Admin Dev
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-300">Admin DEV</div>
               </div>
 
-              <div className="md:hidden w-10" />
+              <div className="md:hidden w-10 shrink-0" />
             </div>
           </div>
         </div>
