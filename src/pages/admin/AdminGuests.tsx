@@ -23,6 +23,8 @@ type GroupRow = {
   sort_order: number | null
 }
 
+type CatKey = "A" | "B" | "C" | "D"
+
 type Guest = {
   id: string
   stage_id: number
@@ -30,6 +32,7 @@ type Guest = {
   birth_date: string | null
   is_pending: boolean
   created_at: string
+  category: CatKey | null
 }
 
 type StageRosterRow = {
@@ -70,6 +73,11 @@ function pickProfileName(p: ProfileRow): string {
 function shortId(id: string | null | undefined) {
   if (!id) return "—"
   return String(id).slice(0, 8)
+}
+
+function asCat(v: any): CatKey | null {
+  const c = String(v ?? "").toUpperCase().trim()
+  return c === "A" || c === "B" || c === "C" || c === "D" ? c : null
 }
 
 async function fetchProfilesByIds(ids: string[]): Promise<ProfileRow[]> {
@@ -114,6 +122,7 @@ export default function AdminGuests() {
   const [editing, setEditing] = useState<Guest | null>(null)
   const [name, setName] = useState("")
   const [birth, setBirth] = useState("")
+  const [category, setCategory] = useState<CatKey>("A")
 
   const [guestPlayMap, setGuestPlayMap] = useState<
     Record<string, { partner: string; pairId: string; groupLabel: string }>
@@ -128,8 +137,45 @@ export default function AdminGuests() {
 
   const isFinished = stageStatus === "finished"
 
+  async function ensureGuestStageRoster(pGuestId: string, pStageId: number, pCategory: CatKey) {
+    const { data: existing, error: existingErr } = await supabase
+      .from("stage_roster")
+      .select("id,stage_id,kind,guest_id,category")
+      .eq("stage_id", pStageId)
+      .eq("kind", "guest")
+      .eq("guest_id", pGuestId)
+      .maybeSingle()
+
+    if (existingErr) throw existingErr
+
+    if (existing?.id) {
+      const { error: updErr } = await supabase
+        .from("stage_roster")
+        .update({ category: pCategory })
+        .eq("id", existing.id)
+
+      if (updErr) throw updErr
+      return
+    }
+
+    const { error: insErr } = await supabase
+      .from("stage_roster")
+      .insert({
+        stage_id: pStageId,
+        kind: "guest",
+        guest_id: pGuestId,
+        category: pCategory,
+      })
+
+    if (insErr) throw insErr
+  }
+
   async function loadStages() {
-    const { data, error } = await supabase.from("stages").select("id,name,status").order("id", { ascending: false })
+    const { data, error } = await supabase
+      .from("stages")
+      .select("id,name,status")
+      .order("id", { ascending: false })
+
     if (error) {
       console.error(error)
       return
@@ -187,15 +233,37 @@ export default function AdminGuests() {
   async function loadGuests(pStageId: number) {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from("guests")
-        .select("*")
-        .eq("stage_id", pStageId)
-        .order("is_pending", { ascending: false })
-        .order("created_at", { ascending: true })
+      const [{ data: guestsData, error: guestsErr }, { data: rosterData, error: rosterErr }] = await Promise.all([
+        supabase
+          .from("guests")
+          .select("*")
+          .eq("stage_id", pStageId)
+          .order("is_pending", { ascending: false })
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("stage_roster")
+          .select("id,stage_id,kind,athlete_id,guest_id,category")
+          .eq("stage_id", pStageId)
+          .eq("kind", "guest"),
+      ])
 
-      if (error) throw error
-      setGuests((data || []) as Guest[])
+      if (guestsErr) throw guestsErr
+      if (rosterErr) throw rosterErr
+
+      const rosterRows = (rosterData || []) as StageRosterRow[]
+      const guestCatMap: Record<string, CatKey | null> = {}
+      for (const r of rosterRows) {
+        const gid = String(r.guest_id ?? "")
+        if (!gid) continue
+        guestCatMap[gid] = asCat(r.category)
+      }
+
+      const rows = ((guestsData || []) as any[]).map((g) => ({
+        ...(g as Guest),
+        category: guestCatMap[String(g.id)] ?? null,
+      }))
+
+      setGuests(rows)
     } catch (e: any) {
       console.error(e)
       alert("Erro ao carregar convidados: " + (e?.message || String(e)))
@@ -324,7 +392,7 @@ export default function AdminGuests() {
       await Promise.all([loadGuests(stageId), loadRounds(stageId), loadAthletesForStage(stageId)])
       setSelectedGuestIds([])
     })()
-  }, [stageId])
+  }, [stageId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!stageId) return
@@ -342,18 +410,20 @@ export default function AdminGuests() {
       await loadGroups(roundId)
       if (stageId) await buildGuestPlayMap(stageId, roundId)
     })()
-  }, [roundId])
+  }, [roundId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openEdit(g: Guest) {
     setEditing(g)
     setName(g.name ?? "")
     setBirth(g.birth_date ?? "")
+    setCategory(g.category ?? "A")
   }
 
   function closeEdit() {
     setEditing(null)
     setName("")
     setBirth("")
+    setCategory("A")
   }
 
   async function saveGuest() {
@@ -362,30 +432,37 @@ export default function AdminGuests() {
       alert("Nome e nascimento são obrigatórios.")
       return
     }
+    if (!category) {
+      alert("Categoria é obrigatória.")
+      return
+    }
 
     if (isFinished) {
       alert("Etapa finalizada: edição bloqueada.")
       return
     }
 
-    const { error } = await supabase
-      .from("guests")
-      .update({
-        name: name.trim(),
-        birth_date: birth,
-        is_pending: false,
-      })
-      .eq("id", editing.id)
+    try {
+      const { error } = await supabase
+        .from("guests")
+        .update({
+          name: name.trim(),
+          birth_date: birth,
+          is_pending: false,
+        })
+        .eq("id", editing.id)
 
-    if (error) {
-      alert("Erro ao salvar: " + (error.message || String(error)))
-      return
-    }
+      if (error) throw error
 
-    closeEdit()
-    if (stageId) {
-      await loadGuests(stageId)
-      if (roundId) await buildGuestPlayMap(stageId, roundId)
+      await ensureGuestStageRoster(editing.id, editing.stage_id, category)
+
+      closeEdit()
+      if (stageId) {
+        await loadGuests(stageId)
+        if (roundId) await buildGuestPlayMap(stageId, roundId)
+      }
+    } catch (e: any) {
+      alert("Erro ao salvar: " + (e?.message || String(e)))
     }
   }
 
@@ -411,7 +488,7 @@ export default function AdminGuests() {
     }
 
     if (data) {
-      openEdit(data as Guest)
+      openEdit({ ...(data as Guest), category: "A" })
       await loadGuests(stageId)
     }
   }
@@ -451,6 +528,15 @@ export default function AdminGuests() {
 
     try {
       setDeleting(true)
+
+      const { error: rosterErr } = await supabase
+        .from("stage_roster")
+        .delete()
+        .eq("stage_id", stageId)
+        .eq("kind", "guest")
+        .in("guest_id", selectedGuestIds)
+
+      if (rosterErr) throw rosterErr
 
       const { error } = await supabase
         .from("guests")
@@ -643,6 +729,7 @@ export default function AdminGuests() {
               </th>
               <th className="py-2">Pendente</th>
               <th>Nome</th>
+              <th>Categoria</th>
               <th>Nascimento</th>
               <th>Jogando com (rodada)</th>
               <th>Grupo</th>
@@ -654,7 +741,7 @@ export default function AdminGuests() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} className="py-3">
+                <td colSpan={9} className="py-3">
                   Carregando...
                 </td>
               </tr>
@@ -662,7 +749,7 @@ export default function AdminGuests() {
 
             {!loading && guests.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-3 text-slate-300">
+                <td colSpan={9} className="py-3 text-slate-300">
                   Nenhum convidado nesta etapa.
                 </td>
               </tr>
@@ -684,6 +771,7 @@ export default function AdminGuests() {
                   </td>
                   <td className="py-2">{g.is_pending ? "SIM" : "NÃO"}</td>
                   <td>{g.name ?? "(sem nome)"}</td>
+                  <td>{g.category ?? "—"}</td>
                   <td>{g.birth_date ?? "(sem data)"}</td>
                   <td>{play?.partner ?? "—"}</td>
                   <td>{play?.groupLabel ?? "—"}</td>
@@ -722,6 +810,21 @@ export default function AdminGuests() {
             <div>
               <div className="text-sm text-slate-300">Nome</div>
               <input className="input" value={name} onChange={(e) => setName(e.target.value)} disabled={isFinished} />
+            </div>
+
+            <div>
+              <div className="text-sm text-slate-300">Categoria</div>
+              <select
+                className="input"
+                value={category}
+                onChange={(e) => setCategory(e.target.value as CatKey)}
+                disabled={isFinished}
+              >
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+              </select>
             </div>
 
             <div>
