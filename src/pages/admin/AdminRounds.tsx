@@ -39,7 +39,7 @@ type MatchRow = {
   team1_score?: number | null
   team2_score?: number | null
   score: any | null
-  updated_at: string | null
+  updated_at?: string | null
 }
 
 type PendingScoreReport = {
@@ -469,7 +469,7 @@ export default function AdminRounds() {
     return typeof v === "number" && v > 0 ? v : 6
   }
 
-  function setPairsQty(groupId: string, v: number) {
+  function setPairsQtyValue(groupId: string, v: number) {
     setGenPairsQty((prev) => ({ ...prev, [groupId]: v }))
   }
 
@@ -477,7 +477,7 @@ export default function AdminRounds() {
     return genPairingMode[groupId] ?? "auto"
   }
 
-  function setGroupPairingMode(groupId: string, mode: GenPairingMode) {
+  function setGroupPairingModeValue(groupId: string, mode: GenPairingMode) {
     setGenPairingMode((prev) => ({ ...prev, [groupId]: mode }))
   }
 
@@ -941,7 +941,8 @@ export default function AdminRounds() {
       const mapped: ManualEligibleParticipant[] = rows
         .map((r) => {
           const rosterId = String(r?.id ?? "")
-          const kind = String(r?.kind || "").toLowerCase().trim() === "guest" ? "guest" : "athlete"
+          const kind: "athlete" | "guest" =
+            String(r?.kind || "").toLowerCase().trim() === "guest" ? "guest" : "athlete"
           const category = String(r?.category || "").toUpperCase().trim() as CatKey
 
           const athleteRef = String(r?.athlete_id ?? r?.profile_id ?? r?.user_id ?? "").trim()
@@ -957,6 +958,7 @@ export default function AdminRounds() {
             null
 
           let displayName = ""
+
           if (kind === "athlete") {
             displayName =
               profileMap[athleteRef] ||
@@ -974,7 +976,7 @@ export default function AdminRounds() {
             kind,
             category,
             display_name: displayName,
-            source_id: kind === "guest" ? (guestRef || null) : (athleteRef || null),
+            source_id: kind === "guest" ? guestRef || null : athleteRef || null,
           }
         })
         .filter((x) => !!x.roster_id)
@@ -1070,15 +1072,15 @@ export default function AdminRounds() {
       await clearPairsForGroup(g.id)
 
       const payload = pairs.map((p) => {
-  const ids = [p.left.roster_id, p.right.roster_id].sort()
-  return {
-    round_id: roundId,
-    group_id: g.id,
-    player1_roster_id: p.left.roster_id,
-    player2_roster_id: p.right.roster_id,
-    pair_key: ids.join("|"),
-  }
-})
+        const ids = [p.left.roster_id, p.right.roster_id].sort()
+        return {
+          round_id: roundId,
+          group_id: g.id,
+          player1_roster_id: p.left.roster_id,
+          player2_roster_id: p.right.roster_id,
+          pair_key: ids.join("|"),
+        }
+      })
 
       const { error } = await supabase.from("round_pairs").insert(payload)
       if (error) throw error
@@ -1988,7 +1990,7 @@ export default function AdminRounds() {
                             <input
                               className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
                               value={qty}
-                              onChange={(e) => setPairsQty(g.id, e.target.value ? Number(e.target.value) : 0)}
+                              onChange={(e) => setPairsQtyValue(g.id, e.target.value ? Number(e.target.value) : 0)}
                               inputMode="numeric"
                               disabled={loading || !roundId}
                             />
@@ -2011,7 +2013,7 @@ export default function AdminRounds() {
                               <button
                                 type="button"
                                 className={pairingMode === "auto" ? "btn-primary" : "btn-ghost"}
-                                onClick={() => setGroupPairingMode(g.id, "auto")}
+                                onClick={() => setGroupPairingModeValue(g.id, "auto")}
                               >
                                 Automática
                               </button>
@@ -2020,7 +2022,7 @@ export default function AdminRounds() {
                                 type="button"
                                 className={pairingMode === "manual" ? "btn-primary" : "btn-ghost"}
                                 onClick={async () => {
-                                  setGroupPairingMode(g.id, "manual")
+                                  setGroupPairingModeValue(g.id, "manual")
                                   if (manualRoster.length === 0) {
                                     await loadManualParticipantsForGroup(g)
                                   }
@@ -2544,8 +2546,10 @@ export default function AdminRounds() {
               <div className="mt-3 space-y-2">
                 {pendingReports.map((r) => {
                   const s: any = r.score ?? {}
-                  const t1 = typeof s?.team1 === "number" ? s.team1 : typeof s?.games_team1 === "number" ? s.games_team1 : ""
-                  const t2 = typeof s?.team2 === "number" ? s.team2 : typeof s?.games_team2 === "number" ? s.games_team2 : ""
+                  const t1 =
+                    typeof s?.team1 === "number" ? s.team1 : typeof s?.games_team1 === "number" ? s.games_team1 : ""
+                  const t2 =
+                    typeof s?.team2 === "number" ? s.team2 : typeof s?.games_team2 === "number" ? s.games_team2 : ""
                   const placar = t1 !== "" && t2 !== "" ? `${t1} x ${t2}` : "—"
                   const title = `${r.team1_label ?? "Time 1"} x ${r.team2_label ?? "Time 2"}`
 
