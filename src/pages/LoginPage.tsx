@@ -67,7 +67,7 @@ export default function LoginPage() {
     <div className='min-h-screen bg-gripoBlue text-white flex items-center justify-center p-4'>
       <div className='w-full max-w-md card space-y-4'>
         <div>
-          <h1 className='text-2xl font-extrabold'>LIGA35 (DEV)</h1>
+          <h1 className='text-2xl font-extrabold'>LIGA35++</h1>
           <p className='text-slate-300 text-sm'>Acesso ao aplicativo</p>
         </div>
 

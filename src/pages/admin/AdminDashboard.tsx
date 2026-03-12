@@ -363,7 +363,7 @@ export default function AdminDashboard() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-2xl md:text-3xl font-extrabold">Dashboard</div>
-          <div className="text-sm text-slate-300">Visão geral do ambiente DEV</div>
+          <div className="text-sm text-slate-300">Visão geral do ambiente</div>
         </div>
 
         <div className="flex gap-2">
