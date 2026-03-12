@@ -101,23 +101,8 @@
 /* ============================= */
 /*   SELECT FIX DEFINITIVO       */
 /* ============================= */
-select.input {
-  appearance: auto;
-  background-color: rgba(255, 255, 255, 0.08) !important;
-  color: #ffffff !important;
-  color-scheme: dark;
-}
 
-select.input option {
-  background-color: #0b1220 !important;
-  color: #ffffff !important;
-}
-
-select.input optgroup {
-  background-color: #0b1220 !important;
-  color: rgba(255, 255, 255, 0.85) !important;
-}
-
+/* campos base */
 input,
 select,
 textarea {
@@ -130,6 +115,52 @@ select:focus,
 textarea:focus {
   border-color: rgba(255, 165, 0, 0.6);
   box-shadow: 0 0 0 3px rgba(255, 165, 0, 0.2);
+}
+
+/* selects em geral */
+select {
+  appearance: auto;
+  color: #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color-scheme: dark;
+}
+
+/* selects usando classe .input */
+select.input {
+  appearance: auto;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+  color-scheme: dark;
+}
+
+/* opções do dropdown — regra global */
+select option {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+/* optgroup global */
+select optgroup {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+/* reforço específico para selects .input */
+select.input option {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+select.input optgroup {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+/* quando o select estiver desabilitado */
+select:disabled,
+select.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* ============================= */

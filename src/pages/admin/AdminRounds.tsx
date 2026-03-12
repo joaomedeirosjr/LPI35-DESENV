@@ -16,6 +16,7 @@ type RoundRow = {
   mode: string | null
   courts_available: number | null
   created_at: string | null
+  score_target: number | null
 }
 
 type GroupRow = {
@@ -193,6 +194,10 @@ function uniqCatsFromGroup(g: GroupRow): CatKey[] {
   return out
 }
 
+function isValidRoundScore(s1: number, s2: number, target: number) {
+  return (s1 === target && s2 < target) || (s2 === target && s1 < target)
+}
+
 export default function AdminRounds() {
   const [tab, setTab] = useState<TabKey>("config")
 
@@ -215,6 +220,7 @@ export default function AdminRounds() {
 
   const [createRoundMode, setCreateRoundMode] = useState<"fixed_pairs" | "americano">("fixed_pairs")
   const [createRoundLabel, setCreateRoundLabel] = useState<string>("Rodada 1")
+  const [createRoundScoreTarget, setCreateRoundScoreTarget] = useState<4 | 5 | 6>(6)
   const [creatingRound, setCreatingRound] = useState(false)
 
   const [newCatA, setNewCatA] = useState<CatKey>("A")
@@ -253,6 +259,16 @@ export default function AdminRounds() {
     const r = rounds.find((x) => x.id === roundId)
     return r?.mode ?? null
   }, [rounds, roundId])
+
+  const roundScoreTarget = useMemo(() => {
+    const r = rounds.find((x) => x.id === roundId)
+    return r?.score_target ?? 6
+  }, [rounds, roundId])
+
+  const scoreOptions = useMemo(() => {
+    const target = Number(roundScoreTarget ?? 6)
+    return Array.from({ length: target + 1 }, (_, i) => String(i))
+  }, [roundScoreTarget])
 
   const courtsLimit = useMemo(() => {
     if (courtsAvailable && courtsAvailable > 0) return courtsAvailable
@@ -558,7 +574,25 @@ export default function AdminRounds() {
     setManualDraft(groupId, { leftRosterId: rosterId, rightRosterId: "" })
   }
 
-  async function countStageRosterByCategory(pStageId: number, cat: string): Promise<number> {
+  async function countStageRosterByCategory(pStageId: number): Promise<Record<string, number>>
+  async function countStageRosterByCategory(pStageId: number, cat: string): Promise<number>
+  async function countStageRosterByCategory(pStageId: number, cat?: string): Promise<any> {
+    if (!cat) {
+      const { data, error } = await supabase
+        .from("stage_roster")
+        .select("category")
+        .eq("stage_id", pStageId)
+
+      if (error) throw error
+
+      const map: Record<string, number> = { A: 0, B: 0, C: 0, D: 0 }
+      for (const r of (data || []) as any[]) {
+        const c = String(r?.category || "").toUpperCase().trim()
+        if (c in map) map[c] += 1
+      }
+      return map
+    }
+
     const { count, error } = await supabase
       .from("stage_roster")
       .select("id", { count: "exact", head: true })
@@ -1193,7 +1227,7 @@ export default function AdminRounds() {
 
     const { data, error } = await supabase
       .from("rounds")
-      .select("id,stage_id,mode,courts_available,created_at")
+      .select("id,stage_id,mode,courts_available,created_at,score_target")
       .eq("stage_id", pStageId)
       .order("created_at", { ascending: false })
 
@@ -1366,11 +1400,12 @@ export default function AdminRounds() {
       const mode = createRoundMode
 
       const { data, error } = await supabase.rpc("admin_create_round", {
-        p_stage_id: stageId,
-        p_sort_order: sortOrder,
+        p_groups: [],
         p_label: label,
         p_mode: mode,
-        p_groups: [],
+        p_sort_order: sortOrder,
+        p_stage_id: stageId,
+        p_score_target: createRoundScoreTarget,
       })
 
       if (error) throw error
@@ -1520,14 +1555,28 @@ export default function AdminRounds() {
     }
 
     if (!s1 || !s2) {
-      setErr("Informe o placar dos dois lados.")
+      const m = "Informe o placar dos dois lados."
+      setErr(m)
+      alert(m)
       return
     }
 
     const n1 = Number(s1)
     const n2 = Number(s2)
     if (!Number.isFinite(n1) || !Number.isFinite(n2)) {
-      setErr("Placar inválido (use números).")
+      const m = "Placar inválido (use números)."
+      setErr(m)
+      alert(m)
+      return
+    }
+
+    const target = Number(roundScoreTarget ?? 6)
+    const validScore = isValidRoundScore(n1, n2, target)
+
+    if (!validScore) {
+      const m = `Placar inválido para esta rodada. Um time deve fechar em ${target} e o outro deve ficar abaixo de ${target}.`
+      setErr(m)
+      alert(m)
       return
     }
 
@@ -1735,6 +1784,7 @@ export default function AdminRounds() {
             </select>
 
             <div className="mt-1 text-xs text-slate-400">Modo: {roundMode ?? "-"}</div>
+            <div className="mt-1 text-xs text-slate-400">Placar até: {roundScoreTarget ?? "-"}</div>
 
             {rounds.length === 0 && stageId != null && (
               <div className="mt-3 rounded-xl border border-gripoOrange/30 bg-gripoOrange/10 p-4">
@@ -1766,6 +1816,20 @@ export default function AdminRounds() {
                       placeholder="ex: Rodada 1"
                       disabled={creatingRound || loading}
                     />
+                  </div>
+
+                  <div className="w-[160px]">
+                    <div className="text-xs text-slate-300 mb-1">Placar até</div>
+                    <select
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
+                      value={createRoundScoreTarget}
+                      onChange={(e) => setCreateRoundScoreTarget(Number(e.target.value) as 4 | 5 | 6)}
+                      disabled={creatingRound || loading}
+                    >
+                      <option value={4}>4</option>
+                      <option value={5}>5</option>
+                      <option value={6}>6</option>
+                    </select>
                   </div>
 
                   <button
@@ -2482,6 +2546,9 @@ export default function AdminRounds() {
                 Informe o placar e clique em <span className="font-semibold">Salvar & Finalizar</span>. Se precisar
                 corrigir, edite e salve novamente.
               </div>
+              <div className="mt-1 text-xs text-slate-400">
+                Esta rodada é até <span className="font-semibold">{roundScoreTarget}</span>.
+              </div>
             </div>
 
             {isStageFinished && (
@@ -2673,6 +2740,21 @@ export default function AdminRounds() {
                       const draft = scoreDraft[m.match_id] || { s1: "", s2: "" }
                       const isPlayed = (m.status || "").toLowerCase() === "played"
 
+                      const n1 = draft.s1 === "" ? NaN : Number(draft.s1)
+                      const n2 = draft.s2 === "" ? NaN : Number(draft.s2)
+                      const hasBoth = draft.s1 !== "" && draft.s2 !== ""
+                      const localScoreValid =
+                        hasBoth &&
+                        Number.isFinite(n1) &&
+                        Number.isFinite(n2) &&
+                        isValidRoundScore(n1, n2, Number(roundScoreTarget ?? 6))
+
+                      const helperMsg = !hasBoth
+                        ? `Selecione o placar. Um time deve fechar em ${roundScoreTarget}.`
+                        : localScoreValid
+                          ? "Placar válido."
+                          : `Placar inválido. Um time deve fechar em ${roundScoreTarget} e o outro deve ficar abaixo de ${roundScoreTarget}.`
+
                       return (
                         <div key={m.match_id} className="rounded-xl border border-white/10 bg-white/5 p-4">
                           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -2687,12 +2769,22 @@ export default function AdminRounds() {
                               {isPlayed && (
                                 <div className="mt-1 text-xs text-emerald-200">(Pode editar o placar e salvar novamente)</div>
                               )}
+                              <div className="mt-1 text-xs text-slate-400">
+                                Jogo até <span className="font-semibold">{roundScoreTarget}</span>
+                              </div>
+                              <div
+                                className={`mt-1 text-xs ${
+                                  localScoreValid ? "text-emerald-300" : "text-red-300"
+                                }`}
+                              >
+                                {helperMsg}
+                              </div>
                             </div>
 
                             <div className="flex flex-wrap items-end gap-2">
                               <div>
                                 <div className="text-xs text-slate-300 mb-1">Time 1</div>
-                                <input
+                                <select
                                   className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
                                   value={draft.s1}
                                   onChange={(e) =>
@@ -2701,14 +2793,20 @@ export default function AdminRounds() {
                                       [m.match_id]: { s1: e.target.value, s2: draft.s2 },
                                     }))
                                   }
-                                  inputMode="numeric"
                                   disabled={matchesLoading || isStageFinished}
-                                />
+                                >
+                                  <option value="">-</option>
+                                  {scoreOptions.map((opt) => (
+                                    <option key={`t1-${m.match_id}-${opt}`} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
 
                               <div>
                                 <div className="text-xs text-slate-300 mb-1">Time 2</div>
-                                <input
+                                <select
                                   className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
                                   value={draft.s2}
                                   onChange={(e) =>
@@ -2717,15 +2815,26 @@ export default function AdminRounds() {
                                       [m.match_id]: { s1: draft.s1, s2: e.target.value },
                                     }))
                                   }
-                                  inputMode="numeric"
                                   disabled={matchesLoading || isStageFinished}
-                                />
+                                >
+                                  <option value="">-</option>
+                                  {scoreOptions.map((opt) => (
+                                    <option key={`t2-${m.match_id}-${opt}`} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
 
                               <button
                                 className="btn-primary"
                                 onClick={() => saveMatchScore(m.match_id)}
-                                disabled={matchesLoading || isStageFinished}
+                                disabled={matchesLoading || isStageFinished || !localScoreValid}
+                                title={
+                                  localScoreValid
+                                    ? "Salvar resultado"
+                                    : `Placar inválido. Um time deve fechar em ${roundScoreTarget}.`
+                                }
                               >
                                 {isPlayed ? "Salvar (editar)" : "Salvar & Finalizar"}
                               </button>

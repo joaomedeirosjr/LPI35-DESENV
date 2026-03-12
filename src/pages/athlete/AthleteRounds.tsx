@@ -13,6 +13,7 @@ type MatchRow = {
   score: any
   has_pending: boolean
   stage_status?: string | null
+  score_target?: number | null
 }
 
 type PendingRow = {
@@ -59,6 +60,10 @@ function clamp01(n: number) {
   return n
 }
 
+function isValidRoundScore(s1: number, s2: number, target: number) {
+  return (s1 === target && s2 < target) || (s2 === target && s1 < target)
+}
+
 export default function AthleteRounds() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -82,12 +87,46 @@ export default function AthleteRounds() {
     return map
   }, [pending])
 
-  // UX: se a RPC devolver stage_status, mostramos mensagem amigável
   const anyStageStatus = useMemo(() => matches.some((m) => m.stage_status != null), [matches])
-  const hasRunning = useMemo(() => matches.some((m) => (m.stage_status ?? "").toLowerCase() === "running"), [matches])
+  const hasRunning = useMemo(
+    () => matches.some((m) => (m.stage_status ?? "").toLowerCase() === "running"),
+    [matches],
+  )
 
-  // ✅ listar apenas jogos pendentes
-  const pendingMatchesOnly = useMemo(() => matches.filter((m) => String(m.status) === "pending"), [matches])
+  const pendingMatchesOnly = useMemo(
+    () => matches.filter((m) => String(m.status) === "pending"),
+    [matches],
+  )
+
+  const editingScoreTarget = useMemo(() => {
+    const v = Number(editing?.score_target ?? 6)
+    return v === 4 || v === 5 || v === 6 ? v : 6
+  }, [editing])
+
+  const editingScoreOptions = useMemo(() => {
+    return Array.from({ length: editingScoreTarget + 1 }, (_, i) => String(i))
+  }, [editingScoreTarget])
+
+  const editingScoreValid = useMemo(() => {
+    if (!editing) return false
+    if (t1 === "" || t2 === "") return false
+
+    const n1 = Number(t1)
+    const n2 = Number(t2)
+    if (!Number.isFinite(n1) || !Number.isFinite(n2)) return false
+
+    return isValidRoundScore(n1, n2, editingScoreTarget)
+  }, [editing, t1, t2, editingScoreTarget])
+
+  const editingHelperText = useMemo(() => {
+    if (!editing) return ""
+    if (t1 === "" || t2 === "") {
+      return `Selecione o placar. Um time deve fechar em ${editingScoreTarget}.`
+    }
+    return editingScoreValid
+      ? "Placar válido."
+      : `Placar inválido. Um time deve fechar em ${editingScoreTarget} e o outro deve ficar abaixo de ${editingScoreTarget}.`
+  }, [editing, t1, t2, editingScoreTarget, editingScoreValid])
 
   async function load(opts?: { silent?: boolean }) {
     const silent = !!opts?.silent
@@ -148,8 +187,16 @@ export default function AthleteRounds() {
 
     const n1 = Number(t1)
     const n2 = Number(t2)
+
     if (!Number.isFinite(n1) || !Number.isFinite(n2) || n1 < 0 || n2 < 0) {
       setError("Informe um placar válido (números >= 0).")
+      return
+    }
+
+    if (!isValidRoundScore(n1, n2, editingScoreTarget)) {
+      setError(
+        `Placar inválido. Um time deve fechar em ${editingScoreTarget} e o outro deve ficar abaixo de ${editingScoreTarget}.`,
+      )
       return
     }
 
@@ -167,6 +214,8 @@ export default function AthleteRounds() {
     }
 
     setEditing(null)
+    setT1("")
+    setT2("")
     await load({ silent: true })
   }
 
@@ -191,15 +240,12 @@ export default function AthleteRounds() {
     await load({ silent: true })
   }
 
-  // ===== Indicador de progresso (micro-detalhes) =====
   const progress = useMemo(() => {
     const total = matches.length
     const played = matches.filter((m) => String(m.status).toLowerCase() === "played").length
     const pendingCount = matches.filter((m) => String(m.status).toLowerCase() === "pending").length
 
-    // “Preciso confirmar” = existe pendência do adversário pra eu confirmar
     let needMyConfirm = 0
-    // “Aguardando” = eu já enviei e estou aguardando (has_pending=true e não tenho nada pra confirmar)
     let waitingConfirm = 0
 
     for (const m of matches) {
@@ -221,7 +267,6 @@ export default function AthleteRounds() {
 
   return (
     <div className="space-y-3">
-      {/* Header compacto + Atualizar + Progresso */}
       <div className="card">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -237,7 +282,6 @@ export default function AthleteRounds() {
               </div>
             )}
 
-            {/* Progresso da rodada (do atleta) */}
             <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs text-white/70">
@@ -300,10 +344,7 @@ export default function AthleteRounds() {
             const enabled = canInteractWithMatch(m)
             const stLabel = stageStatusLabel(m.stage_status)
 
-            // pendências do adversário (para eu confirmar)
             const pendFromOther = me ? pend.filter((p) => p.reported_by !== me) : []
-
-            // eu já enviei e estou aguardando
             const waitingMyReport = Boolean(m.has_pending) && pendFromOther.length === 0
 
             const showConfirm = pendFromOther.length > 0
@@ -366,7 +407,6 @@ export default function AthleteRounds() {
 
                       {showConfirm && (
                         <button
-                          // ✅ confirmar em azul (depende do CSS do .btn-confirm no index.css)
                           className="btn btn-confirm"
                           onClick={() => confirmScore(m.match_id, pendFromOther[0].reported_by, m)}
                           disabled={!enabled}
@@ -383,6 +423,10 @@ export default function AthleteRounds() {
                       )}
                     </div>
 
+                    <div className="mt-2 text-[11px] text-white/60">
+                      Jogo até <b>{Number(m.score_target ?? 6)}</b>
+                    </div>
+
                     {showConfirm && (
                       <div className="mt-2 text-[11px] text-white/60">
                         Pendente: <b>{fmtScore(pendFromOther[0].score)}</b> (por{" "}
@@ -397,7 +441,6 @@ export default function AthleteRounds() {
         </div>
       )}
 
-      {/* Modal: menos transparente */}
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl p-4">
@@ -408,41 +451,93 @@ export default function AthleteRounds() {
                   {editing.team1_label ?? "Time 1"} vs {editing.team2_label ?? "Time 2"} • Quadra{" "}
                   {editing.court_no} • Ordem {editing.slot_no}
                 </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Esta rodada é até <b>{editingScoreTarget}</b>.
+                </div>
               </div>
 
-              <button className="btn-ghost" onClick={() => setEditing(null)}>
+              <button
+                className="btn-ghost"
+                onClick={() => {
+                  setEditing(null)
+                  setT1("")
+                  setT2("")
+                }}
+              >
                 Fechar
               </button>
             </div>
 
             <div className="mt-4 flex items-center gap-3">
-              <input
-                className="input w-24"
-                inputMode="numeric"
-                placeholder="Time 1"
-                value={t1}
-                onChange={(e) => setT1(e.target.value)}
-              />
-              <div className="font-extrabold">x</div>
-              <input
-                className="input w-24"
-                inputMode="numeric"
-                placeholder="Time 2"
-                value={t2}
-                onChange={(e) => setT2(e.target.value)}
-              />
+              <div>
+                <div className="text-xs text-slate-300 mb-1">Minha dupla</div>
+                <select
+                  className="input w-24"
+                  value={t1}
+                  onChange={(e) => setT1(e.target.value)}
+                >
+                  <option value="">-</option>
+                  {editingScoreOptions.map((opt) => (
+                    <option key={`athlete-t1-${opt}`} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="font-extrabold mt-5">x</div>
+
+              <div>
+                <div className="text-xs text-slate-300 mb-1">Adversários</div>
+                <select
+                  className="input w-24"
+                  value={t2}
+                  onChange={(e) => setT2(e.target.value)}
+                >
+                  <option value="">-</option>
+                  {editingScoreOptions.map((opt) => (
+                    <option key={`athlete-t2-${opt}`} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="flex-1" />
 
-              <button className="btn btn-secondary" onClick={() => setEditing(null)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setEditing(null)
+                  setT1("")
+                  setT2("")
+                }}
+              >
                 Cancelar
               </button>
-              <button className="btn btn-primary" onClick={submitReport}>
+              <button
+                className="btn btn-primary"
+                onClick={submitReport}
+                disabled={!editingScoreValid}
+                title={
+                  editingScoreValid
+                    ? "Enviar placar"
+                    : `Placar inválido. Um time deve fechar em ${editingScoreTarget}.`
+                }
+              >
                 Enviar
               </button>
             </div>
 
-            <div className="text-xs text-slate-300 mt-3">
+            <div
+              className={`text-xs mt-3 ${
+                editingScoreValid ? "text-emerald-300" : "text-red-300"
+              }`}
+            >
+              {editingHelperText}
+            </div>
+
+            <div className="text-xs text-slate-300 mt-2">
               Ao enviar, o jogo fica <b>aguardando confirmação</b> do adversário.
             </div>
           </div>
