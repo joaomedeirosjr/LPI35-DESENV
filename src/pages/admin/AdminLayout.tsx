@@ -293,7 +293,7 @@ export default function AdminLayout() {
                           Painel administrativo
                         </div>
                         <span className="inline-flex items-center rounded-full border border-gripoOrange/35 bg-gripoOrange/15 px-2 py-[4px] text-[9px] md:text-[10px] font-bold uppercase tracking-[0.14em] text-orange-100">
-                          Admin Dev
+                          Admin Oficial
                         </span>
                       </div>
                     </div>
