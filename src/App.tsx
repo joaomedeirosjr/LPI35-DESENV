@@ -26,8 +26,8 @@ export default function App() {
       <Route path='/pending' element={<PendingPage />} />
       <Route path='/rejected' element={<RejectedPage />} />
 
-      <Route path='/' element={<Navigate to='/admin' replace />} />
-      <Route path='*' element={<Navigate to='/admin' replace />} />
+      <Route path='/' element={<Navigate to='/login' replace />} />
+      <Route path='*' element={<Navigate to='/login' replace />} />
     </Routes>
   )
 }
