@@ -442,12 +442,12 @@ export default function AthleteRounds() {
       )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4">
+          <div className="w-full max-w-lg overflow-x-hidden rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <div className="text-lg font-extrabold">Lançar placar</div>
-                <div className="text-xs text-slate-300 mt-0.5">
+                <div className="text-xs text-slate-300 mt-0.5 leading-relaxed break-words">
                   {editing.team1_label ?? "Time 1"} vs {editing.team2_label ?? "Time 2"} • Quadra{" "}
                   {editing.court_no} • Ordem {editing.slot_no}
                 </div>
@@ -457,7 +457,7 @@ export default function AthleteRounds() {
               </div>
 
               <button
-                className="btn-ghost"
+                className="btn-ghost shrink-0"
                 onClick={() => {
                   setEditing(null)
                   setT1("")
@@ -468,65 +468,69 @@ export default function AthleteRounds() {
               </button>
             </div>
 
-            <div className="mt-4 flex items-center gap-3">
-              <div>
-                <div className="text-xs text-slate-300 mb-1">Minha dupla</div>
-                <select
-                  className="input w-24"
-                  value={t1}
-                  onChange={(e) => setT1(e.target.value)}
-                >
-                  <option value="">-</option>
-                  {editingScoreOptions.map((opt) => (
-                    <option key={`athlete-t1-${opt}`} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+            <div className="mt-4 flex flex-col gap-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-300 mb-1">Minha dupla</div>
+                  <select
+                    className="input w-full"
+                    value={t1}
+                    onChange={(e) => setT1(e.target.value)}
+                  >
+                    <option value="">-</option>
+                    {editingScoreOptions.map((opt) => (
+                      <option key={`athlete-t1-${opt}`} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="hidden sm:flex items-center justify-center pb-3 text-xl font-extrabold">
+                  x
+                </div>
+
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-300 mb-1">Adversários</div>
+                  <select
+                    className="input w-full"
+                    value={t2}
+                    onChange={(e) => setT2(e.target.value)}
+                  >
+                    <option value="">-</option>
+                    {editingScoreOptions.map((opt) => (
+                      <option key={`athlete-t2-${opt}`} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="font-extrabold mt-5">x</div>
-
-              <div>
-                <div className="text-xs text-slate-300 mb-1">Adversários</div>
-                <select
-                  className="input w-24"
-                  value={t2}
-                  onChange={(e) => setT2(e.target.value)}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  className="btn btn-secondary w-full sm:w-auto"
+                  onClick={() => {
+                    setEditing(null)
+                    setT1("")
+                    setT2("")
+                  }}
                 >
-                  <option value="">-</option>
-                  {editingScoreOptions.map((opt) => (
-                    <option key={`athlete-t2-${opt}`} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-primary w-full sm:w-auto"
+                  onClick={submitReport}
+                  disabled={!editingScoreValid}
+                  title={
+                    editingScoreValid
+                      ? "Enviar placar"
+                      : `Placar inválido. Um time deve fechar em ${editingScoreTarget}.`
+                  }
+                >
+                  Enviar
+                </button>
               </div>
-
-              <div className="flex-1" />
-
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  setEditing(null)
-                  setT1("")
-                  setT2("")
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={submitReport}
-                disabled={!editingScoreValid}
-                title={
-                  editingScoreValid
-                    ? "Enviar placar"
-                    : `Placar inválido. Um time deve fechar em ${editingScoreTarget}.`
-                }
-              >
-                Enviar
-              </button>
             </div>
 
             <div
@@ -537,7 +541,7 @@ export default function AthleteRounds() {
               {editingHelperText}
             </div>
 
-            <div className="text-xs text-slate-300 mt-2">
+            <div className="text-xs text-slate-300 mt-2 leading-relaxed">
               Ao enviar, o jogo fica <b>aguardando confirmação</b> do adversário.
             </div>
           </div>
