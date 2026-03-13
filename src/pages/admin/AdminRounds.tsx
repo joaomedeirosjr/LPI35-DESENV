@@ -32,6 +32,7 @@ type GroupRow = {
 
 type MatchRow = {
   match_id: string
+  group_id?: string | null
   slot_no: number | null
   court_no: number | null
   status: string | null
@@ -95,6 +96,20 @@ type PairView = {
   b_id: string | null
   a_name: string | null
   b_name: string | null
+}
+
+type GroupAudit = {
+  totalMatches: number
+  gamesByAthlete: Array<{ athlete: string; games: number }>
+  pairsCount: Array<{ pair: string; count: number }>
+  againstCount: Array<{ athlete: string; opponent: string; count: number }>
+  slotSequences: Array<{ athlete: string; longestRun: number; slots: number[] }>
+}
+
+function normalizeRoundMode(v: string | null | undefined) {
+  return String(v ?? "")
+    .trim()
+    .toLowerCase()
 }
 
 function CatSelect(props: {
@@ -218,7 +233,9 @@ export default function AdminRounds() {
   const [clubCourts, setClubCourts] = useState<number | null>(null)
   const [courtsAvailable, setCourtsAvailable] = useState<number | null>(null)
 
-  const [createRoundMode, setCreateRoundMode] = useState<"fixed_pairs" | "americano">("fixed_pairs")
+  const [createRoundMode, setCreateRoundMode] = useState<"fixed_pairs" | "americano" | "americanocat">(
+    "fixed_pairs",
+  )
   const [createRoundLabel, setCreateRoundLabel] = useState<string>("Rodada 1")
   const [createRoundScoreTarget, setCreateRoundScoreTarget] = useState<4 | 5 | 6>(6)
   const [creatingRound, setCreatingRound] = useState(false)
@@ -247,6 +264,8 @@ export default function AdminRounds() {
   const [manualPairs, setManualPairs] = useState<Record<string, ManualPair[]>>({})
   const [manualDrafts, setManualDrafts] = useState<Record<string, ManualDraft>>({})
   const [manualLoading, setManualLoading] = useState<Record<string, boolean>>({})
+  const [groupAudit, setGroupAudit] = useState<Record<string, GroupAudit>>({})
+  const [auditLoading, setAuditLoading] = useState<Record<string, boolean>>({})
 
   const stageStatus = useMemo(() => {
     if (!stageId) return null
@@ -259,6 +278,8 @@ export default function AdminRounds() {
     const r = rounds.find((x) => x.id === roundId)
     return r?.mode ?? null
   }, [rounds, roundId])
+
+  const roundModeNormalized = useMemo(() => normalizeRoundMode(roundMode), [roundMode])
 
   const roundScoreTarget = useMemo(() => {
     const r = rounds.find((x) => x.id === roundId)
@@ -318,8 +339,30 @@ export default function AdminRounds() {
       .sort((a, b) => a - b)
   }, [printMatchesByCourt])
 
+  const groupLabelById = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const g of groups) {
+      const a = (g.cat_a ?? "").trim()
+      const b = (g.cat_b ?? "").trim()
+      map[g.id] = a && b ? `${a}+${b}` : ((g.label ?? "").trim() || "—")
+    }
+    return map
+  }, [groups])
+
+  const matchGroupLabelByMatchId = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const m of matches) {
+      const groupId = String(m.group_id ?? "")
+      if (groupId && groupLabelById[groupId]) {
+        map[m.match_id] = groupLabelById[groupId]
+      }
+    }
+    return map
+  }, [matches, groupLabelById])
+
   const printCourtCatsMap = useMemo(() => {
-    const map: Record<number, string> = {}
+    const map: Record<number, string[]> = {}
+
     for (const g of groups) {
       const from = g.court_from ?? null
       const to = g.court_to ?? null
@@ -330,10 +373,20 @@ export default function AdminRounds() {
       const cats = a && b ? `${a}+${b}` : ((g.label ?? "").trim() || "—")
 
       for (let c = from; c <= to; c++) {
-        map[c] = cats
+        if (!map[c]) map[c] = []
+        if (!map[c].includes(cats)) {
+          map[c].push(cats)
+        }
       }
     }
-    return map
+
+    const out: Record<number, string> = {}
+    for (const key of Object.keys(map)) {
+      const courtNo = Number(key)
+      out[courtNo] = map[courtNo].join(" / ")
+    }
+
+    return out
   }, [groups])
 
   const selectedSeason = useMemo(() => {
@@ -382,19 +435,33 @@ export default function AdminRounds() {
 .screen-only { display: block; }
 
 @media print {
-  body * { visibility: hidden; }
-  .print-area, .print-area * { visibility: visible; }
-  .screen-only, .no-print, button, input, select, textarea { display: none !important; }
-
-  .print-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
   }
 
-  .print-only { display: block !important; }
-  .card { box-shadow: none !important; }
+  .screen-only {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .card {
+    box-shadow: none !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
 }
 
 .print-sheet {
@@ -429,6 +496,8 @@ export default function AdminRounds() {
 
 .print-court {
   margin-top: 10px;
+  break-inside: avoid-page;
+  page-break-inside: avoid;
 }
 
 .print-court-head {
@@ -468,9 +537,11 @@ export default function AdminRounds() {
   opacity: .85;
 }
 
-.print-pagebreak {
-  break-after: page;
-  page-break-after: always;
+.print-group-cell {
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
 }
 `
     document.head.appendChild(style)
@@ -574,6 +645,116 @@ export default function AdminRounds() {
     setManualDraft(groupId, { leftRosterId: rosterId, rightRosterId: "" })
   }
 
+  function parseTeamPlayers(teamLabel: string | null): string[] {
+    const raw = String(teamLabel ?? "").trim()
+    if (!raw) return []
+    return raw
+      .split(" + ")
+      .map((x) => x.trim())
+      .filter(Boolean)
+  }
+
+  function normalizePairLabel(a: string, b: string) {
+    return [a.trim(), b.trim()].sort((x, y) => x.localeCompare(y, "pt-BR")).join(" + ")
+  }
+
+  function buildAuditForGroup(groupId: string, allMatches: MatchRow[]): GroupAudit {
+    const rows = allMatches
+      .filter((m) => String(m.group_id ?? "") === String(groupId))
+      .slice()
+      .sort((a, b) => {
+        const sa = a.slot_no ?? 0
+        const sb = b.slot_no ?? 0
+        if (sa !== sb) return sa - sb
+        const ca = a.court_no ?? 0
+        const cb = b.court_no ?? 0
+        return ca - cb
+      })
+
+    const gamesMap = new Map<string, number>()
+    const pairsMap = new Map<string, number>()
+    const againstMap = new Map<string, number>()
+    const slotsMap = new Map<string, number[]>()
+
+    for (const m of rows) {
+      const t1 = parseTeamPlayers(m.team1)
+      const t2 = parseTeamPlayers(m.team2)
+      const slot = Number(m.slot_no ?? 0)
+
+      for (const athlete of [...t1, ...t2]) {
+        gamesMap.set(athlete, (gamesMap.get(athlete) ?? 0) + 1)
+        const prev = slotsMap.get(athlete) ?? []
+        if (slot > 0 && !prev.includes(slot)) prev.push(slot)
+        slotsMap.set(athlete, prev)
+      }
+
+      if (t1.length === 2) {
+        const pair = normalizePairLabel(t1[0], t1[1])
+        pairsMap.set(pair, (pairsMap.get(pair) ?? 0) + 1)
+      }
+
+      if (t2.length === 2) {
+        const pair = normalizePairLabel(t2[0], t2[1])
+        pairsMap.set(pair, (pairsMap.get(pair) ?? 0) + 1)
+      }
+
+      for (const a of t1) {
+        for (const b of t2) {
+          const k1 = `${a}|||${b}`
+          const k2 = `${b}|||${a}`
+          againstMap.set(k1, (againstMap.get(k1) ?? 0) + 1)
+          againstMap.set(k2, (againstMap.get(k2) ?? 0) + 1)
+        }
+      }
+    }
+
+    const gamesByAthlete = Array.from(gamesMap.entries())
+      .map(([athlete, games]) => ({ athlete, games }))
+      .sort((a, b) => b.games - a.games || a.athlete.localeCompare(b.athlete, "pt-BR"))
+
+    const pairsCount = Array.from(pairsMap.entries())
+      .map(([pair, count]) => ({ pair, count }))
+      .sort((a, b) => b.count - a.count || a.pair.localeCompare(b.pair, "pt-BR"))
+
+    const againstCount = Array.from(againstMap.entries())
+      .map(([key, count]) => {
+        const [athlete, opponent] = key.split("|||")
+        return { athlete, opponent, count }
+      })
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          a.athlete.localeCompare(b.athlete, "pt-BR") ||
+          a.opponent.localeCompare(b.opponent, "pt-BR"),
+      )
+
+    const slotSequences = Array.from(slotsMap.entries())
+      .map(([athlete, slots]) => {
+        const ordered = [...slots].sort((a, b) => a - b)
+        let longestRun = 0
+        let currentRun = 0
+        let prev: number | null = null
+
+        for (const s of ordered) {
+          if (prev == null || s !== prev + 1) currentRun = 1
+          else currentRun += 1
+          if (currentRun > longestRun) longestRun = currentRun
+          prev = s
+        }
+
+        return { athlete, longestRun, slots: ordered }
+      })
+      .sort((a, b) => b.longestRun - a.longestRun || a.athlete.localeCompare(b.athlete, "pt-BR"))
+
+    return {
+      totalMatches: rows.length,
+      gamesByAthlete,
+      pairsCount,
+      againstCount,
+      slotSequences,
+    }
+  }
+
   async function countStageRosterByCategory(pStageId: number): Promise<Record<string, number>>
   async function countStageRosterByCategory(pStageId: number, cat: string): Promise<number>
   async function countStageRosterByCategory(pStageId: number, cat?: string): Promise<any> {
@@ -648,6 +829,28 @@ export default function AdminRounds() {
     }
   }
 
+
+  async function loadAuditForGroup(groupId: string) {
+    if (!roundId) return
+
+    setAuditLoading((prev) => ({ ...prev, [groupId]: true }))
+    try {
+      const { data, error } = await supabase.rpc("admin_list_round_matches", {
+        p_round_id: roundId,
+      })
+      if (error) throw error
+
+      const rows = (data || []) as MatchRow[]
+      const audit = buildAuditForGroup(groupId, rows)
+      setGroupAudit((prev) => ({ ...prev, [groupId]: audit }))
+    } catch (e: any) {
+      console.error(e)
+      alert("Erro ao gerar auditoria: " + (e?.message || String(e)))
+    } finally {
+      setAuditLoading((prev) => ({ ...prev, [groupId]: false }))
+    }
+  }
+
   async function loadAvailableCountsForStage(pStageId: number): Promise<Record<string, number>> {
     if (availableCountsStageId === pStageId && Object.keys(availableCounts).length > 0) {
       return availableCounts
@@ -710,6 +913,66 @@ export default function AdminRounds() {
 
     if (error) throw error
     return count || 0
+  }
+
+
+  async function clearGroupMatches(g: GroupRow) {
+    if (!roundId) {
+      alert("Selecione uma rodada.")
+      return
+    }
+
+    if (!confirm(`Excluir TODOS os jogos do grupo ${g.label ?? `${g.cat_a}+${g.cat_b}`}?`)) return
+
+    try {
+      setLoading(true)
+      setErr(null)
+      setMsg(null)
+
+      const tryRpc = await supabase.rpc("admin_clear_round_group_matches", {
+        p_round_id: roundId,
+        p_group_id: g.id,
+      })
+
+      if (tryRpc.error) {
+        const { data: idsData, error: idsError } = await supabase
+          .from("matches")
+          .select("id")
+          .eq("round_id", roundId)
+          .eq("group_id", g.id)
+
+        if (idsError) throw idsError
+
+        const ids = ((idsData || []) as any[]).map((x) => String(x.id)).filter(Boolean)
+
+        if (ids.length > 0) {
+          const { error: mtErr } = await supabase.from("match_teams").delete().in("match_id", ids)
+          if (mtErr) throw mtErr
+
+          const { error: mErr } = await supabase
+            .from("matches")
+            .delete()
+            .eq("round_id", roundId)
+            .eq("group_id", g.id)
+          if (mErr) throw mErr
+        }
+      }
+
+      setGroupAudit((prev) => {
+        const next = { ...prev }
+        delete next[g.id]
+        return next
+      })
+
+      setMsg(`Jogos do grupo ${g.label ?? `${g.cat_a}+${g.cat_b}`} excluídos.`)
+      await loadMatches(roundId)
+      await loadPendingReports(roundId)
+    } catch (e: any) {
+      setErr(e?.message || String(e))
+      alert("Erro ao excluir jogos do grupo: " + (e?.message || String(e)))
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function resetGroupGuestsToPairs(g: GroupRow) {
@@ -778,6 +1041,16 @@ export default function AdminRounds() {
 
     const counts = await loadAvailableCountsForStage(stageId)
     const pairs = await countPairsByGroup(g.id)
+
+    if (aCat === bCat) {
+      const total = Number(counts[aCat] ?? 0)
+      const need = Math.max(0, 4 - total)
+      setGenCounts((prev) => ({
+        ...prev,
+        [g.id]: { a: total, b: 0, needA: need, needB: 0, pairs },
+      }))
+      return
+    }
 
     const a = Number(counts[aCat] ?? 0)
     const b = Number(counts[bCat] ?? 0)
@@ -876,22 +1149,52 @@ export default function AdminRounds() {
     }
   }
 
-  async function genCanGenerateGames(groupId: string): Promise<boolean> {
-    const pairs = await countPairsByGroup(groupId)
+  async function genCanGenerateGames(g: GroupRow): Promise<boolean> {
+    if (roundModeNormalized === "americanocat") {
+      if (!stageId) return false
+      const aCat = String(g.cat_a || "").toUpperCase().trim()
+      const bCat = String(g.cat_b || "").toUpperCase().trim()
+      if (!aCat || aCat !== bCat) return false
+
+      const counts = await loadAvailableCountsForStage(stageId)
+      const total = Number(counts[aCat] ?? 0)
+      return total >= 4
+    }
+
+    const pairs = await countPairsByGroup(g.id)
     return pairs >= 2
   }
 
   async function genGenerateMatchesForGroup(groupId: string) {
     if (!roundId) throw new Error("Selecione uma rodada.")
 
-    const { data, error } = await supabase.rpc("admin_generate_round_robin_matches_for_group", {
+    const mode = normalizeRoundMode(roundMode)
+
+    if (mode === "americanocat") {
+      const { data, error } = await supabase.rpc("admin_generate_americanocat_matches_for_group", {
+        p_round_id: roundId,
+        p_group_id: groupId,
+      })
+
+      if (error) throw error
+      return Number(data ?? 0)
+    }
+
+    const tryOld = await supabase.rpc("admin_generate_round_robin_matches_for_group", {
       p_round_id: roundId,
       p_group_id: groupId,
       p_clear_existing: true,
     })
 
-    if (error) throw error
-    return Number(data ?? 0)
+    if (!tryOld.error) return Number(tryOld.data ?? 0)
+
+    const tryTwoArgs = await supabase.rpc("admin_generate_round_robin_matches_for_group", {
+      p_round_id: roundId,
+      p_group_id: groupId,
+    })
+
+    if (tryTwoArgs.error) throw tryTwoArgs.error
+    return Number(tryTwoArgs.data ?? 0)
   }
 
   async function loadManualParticipantsForGroup(g: GroupRow) {
@@ -1141,13 +1444,14 @@ export default function AdminRounds() {
       setLoading(true)
       setErr(null)
 
-      const ok = await genCanGenerateGames(g.id)
+      const ok = await genCanGenerateGames(g)
       if (!ok) {
         alert("É necessário ter no mínimo 2 duplas salvas no grupo.")
         return
       }
 
       await genGenerateMatchesForGroup(g.id)
+      await loadAuditForGroup(g.id)
       alert("Jogos gerados a partir das duplas manuais.")
     } catch (e: any) {
       setErr(e?.message || String(e))
@@ -1182,6 +1486,7 @@ export default function AdminRounds() {
     setMatches([])
     setScoreDraft({})
     setCourtFilter(null)
+    setGroupAudit({})
 
     if (!pSeasonId) return
 
@@ -1224,6 +1529,7 @@ export default function AdminRounds() {
     setMatches([])
     setScoreDraft({})
     setCourtFilter(null)
+    setGroupAudit({})
 
     const { data, error } = await supabase
       .from("rounds")
@@ -1240,6 +1546,7 @@ export default function AdminRounds() {
 
   async function loadGroups(pRoundId: string) {
     setGroups([])
+    setGroupAudit({})
     if (!pRoundId) return
 
     const { data, error } = await supabase
@@ -1491,9 +1798,21 @@ export default function AdminRounds() {
       return
     }
 
-    if (newCatA === newCatB) {
-      setErr("Categorias não podem ser iguais.")
+    if (!roundModeNormalized) {
+      setErr("Não foi possível identificar o modo da rodada.")
       return
+    }
+
+    if (roundModeNormalized === "americanocat") {
+      if (newCatA !== newCatB) {
+        setErr("No modo Americano CAT, as categorias devem ser iguais.")
+        return
+      }
+    } else {
+      if (newCatA === newCatB) {
+        setErr("Categorias não podem ser iguais para este modo.")
+        return
+      }
     }
 
     setLoading(true)
@@ -1697,1159 +2016,1392 @@ export default function AdminRounds() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-2xl md:text-3xl font-extrabold">Rodadas</div>
-          <div className="text-sm text-slate-300">Configurar, gerar e operar jogos (modo on-line)</div>
-        </div>
-
-        <button className="btn-ghost" onClick={refreshAll} disabled={loading}>
-          {loading ? "Atualizando..." : "Atualizar"}
-        </button>
-      </div>
-
-      {err && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-100">
-          <div className="font-semibold">Erro</div>
-          <div className="text-sm opacity-90">{err}</div>
-        </div>
-      )}
-
-      {msg && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-100">
-          <div className="font-semibold">OK</div>
-          <div className="text-sm opacity-90">{msg}</div>
-        </div>
-      )}
-
-      <div className="card">
-        <div className="grid gap-4 md:grid-cols-4">
+      <div className="screen-only">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs text-slate-300 mb-1">Temporada</div>
-            <select
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
-              value={seasonId}
-              onChange={(e) => setSeasonId(e.target.value)}
-              disabled={loading}
-            >
-              {seasons.length === 0 ? (
-                <option value="">(sem temporadas)</option>
-              ) : (
-                seasons.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name ?? s.id}
-                  </option>
-                ))
-              )}
-            </select>
+            <div className="text-2xl md:text-3xl font-extrabold">Rodadas</div>
+            <div className="text-sm text-slate-300">Configurar, gerar e operar jogos (modo on-line)</div>
           </div>
 
-          <div>
-            <div className="text-xs text-slate-300 mb-1">Etapa</div>
-            <select
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
-              value={stageId ? String(stageId) : ""}
-              onChange={(e) => setStageId(e.target.value ? Number(e.target.value) : null)}
-              disabled={loading || stages.length === 0}
-            >
-              {stages.length === 0 ? (
-                <option value="">(sem etapas)</option>
-              ) : (
-                stages.map((st) => (
-                  <option key={st.id} value={String(st.id)}>
-                    {st.name ?? "Etapa " + st.id}
-                  </option>
-                ))
-              )}
-            </select>
+          <button className="btn-ghost" onClick={refreshAll} disabled={loading}>
+            {loading ? "Atualizando..." : "Atualizar"}
+          </button>
+        </div>
+
+        {err && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-100">
+            <div className="font-semibold">Erro</div>
+            <div className="text-sm opacity-90">{err}</div>
           </div>
+        )}
 
-          <div>
-            <div className="text-xs text-slate-300 mb-1">Rodada</div>
-            <select
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
-              value={roundId}
-              onChange={(e) => setRoundId(e.target.value)}
-              disabled={loading || rounds.length === 0}
-            >
-              {rounds.length === 0 ? (
-                <option value="">(sem rodadas)</option>
-              ) : (
-                rounds.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {(r.mode ?? "round") + " - " + r.id.slice(0, 8)}
-                  </option>
-                ))
-              )}
-            </select>
+        {msg && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-100">
+            <div className="font-semibold">OK</div>
+            <div className="text-sm opacity-90">{msg}</div>
+          </div>
+        )}
 
-            <div className="mt-1 text-xs text-slate-400">Modo: {roundMode ?? "-"}</div>
-            <div className="mt-1 text-xs text-slate-400">Placar até: {roundScoreTarget ?? "-"}</div>
+        <div className="card">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div>
+              <div className="text-xs text-slate-300 mb-1">Temporada</div>
+              <select
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
+                value={seasonId}
+                onChange={(e) => setSeasonId(e.target.value)}
+                disabled={loading}
+              >
+                {seasons.length === 0 ? (
+                  <option value="">(sem temporadas)</option>
+                ) : (
+                  seasons.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name ?? s.id}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
 
-            {rounds.length === 0 && stageId != null && (
-              <div className="mt-3 rounded-xl border border-gripoOrange/30 bg-gripoOrange/10 p-4">
-                <div className="text-sm font-extrabold text-white">Criar Rodada</div>
-                <div className="mt-1 text-xs text-slate-200/80">
-                  Ainda não existe rodada para esta etapa. Selecione o modo e crie para liberar Configuração / Geração / On-line.
-                </div>
+            <div>
+              <div className="text-xs text-slate-300 mb-1">Etapa</div>
+              <select
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
+                value={stageId ? String(stageId) : ""}
+                onChange={(e) => setStageId(e.target.value ? Number(e.target.value) : null)}
+                disabled={loading || stages.length === 0}
+              >
+                {stages.length === 0 ? (
+                  <option value="">(sem etapas)</option>
+                ) : (
+                  stages.map((st) => (
+                    <option key={st.id} value={String(st.id)}>
+                      {st.name ?? "Etapa " + st.id}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
 
-                <div className="mt-3 flex flex-col md:flex-row gap-3 md:items-end">
-                  <div className="flex-1">
-                    <div className="text-xs text-slate-300 mb-1">Modo</div>
-                    <select
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
-                      value={createRoundMode}
-                      onChange={(e) => setCreateRoundMode(e.target.value as any)}
-                      disabled={creatingRound || loading}
-                    >
-                      <option value="fixed_pairs">Duplas fixas</option>
-                      <option value="americano">Americano</option>
-                    </select>
+            <div>
+              <div className="text-xs text-slate-300 mb-1">Rodada</div>
+              <select
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
+                value={roundId}
+                onChange={(e) => setRoundId(e.target.value)}
+                disabled={loading || rounds.length === 0}
+              >
+                {rounds.length === 0 ? (
+                  <option value="">(sem rodadas)</option>
+                ) : (
+                  rounds.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {(r.mode ?? "round") + " - " + r.id.slice(0, 8)}
+                    </option>
+                  ))
+                )}
+              </select>
+
+              <div className="mt-1 text-xs text-slate-400">Modo: {roundMode ?? "-"}</div>
+              <div className="mt-1 text-xs text-slate-400">Placar até: {roundScoreTarget ?? "-"}</div>
+
+              {rounds.length === 0 && stageId != null && (
+                <div className="mt-3 rounded-xl border border-gripoOrange/30 bg-gripoOrange/10 p-4">
+                  <div className="text-sm font-extrabold text-white">Criar Rodada</div>
+                  <div className="mt-1 text-xs text-slate-200/80">
+                    Ainda não existe rodada para esta etapa. Selecione o modo e crie para liberar Configuração / Geração / On-line.
                   </div>
 
-                  <div className="flex-1">
-                    <div className="text-xs text-slate-300 mb-1">Nome</div>
-                    <input
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
-                      value={createRoundLabel}
-                      onChange={(e) => setCreateRoundLabel(e.target.value)}
-                      placeholder="ex: Rodada 1"
+                  <div className="mt-3 flex flex-col md:flex-row gap-3 md:items-end">
+                    <div className="flex-1">
+                      <div className="text-xs text-slate-300 mb-1">Modo</div>
+                      <select
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
+                        value={createRoundMode}
+                        onChange={(e) => setCreateRoundMode(e.target.value as any)}
+                        disabled={creatingRound || loading}
+                      >
+                        <option value="fixed_pairs">Duplas fixas</option>
+                        <option value="americano">Americano</option>
+                        <option value="americanocat">Americano CAT</option>
+                      </select>
+                    </div>
+
+                    <div className="flex-1">
+                      <div className="text-xs text-slate-300 mb-1">Nome</div>
+                      <input
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
+                        value={createRoundLabel}
+                        onChange={(e) => setCreateRoundLabel(e.target.value)}
+                        placeholder="ex: Rodada 1"
+                        disabled={creatingRound || loading}
+                      />
+                    </div>
+
+                    <div className="w-[160px]">
+                      <div className="text-xs text-slate-300 mb-1">Placar até</div>
+                      <select
+                        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
+                        value={createRoundScoreTarget}
+                        onChange={(e) => setCreateRoundScoreTarget(Number(e.target.value) as 4 | 5 | 6)}
+                        disabled={creatingRound || loading}
+                      >
+                        <option value={4}>4</option>
+                        <option value={5}>5</option>
+                        <option value={6}>6</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={createRound}
                       disabled={creatingRound || loading}
+                      title="Cria a rodada para esta etapa"
+                    >
+                      {creatingRound ? "Criando..." : "Criar Rodada"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="text-xs text-slate-300">Quadras</div>
+              <div className="mt-1 text-sm text-slate-200">
+                Clube: <span className="font-semibold">{club?.name ?? "-"}</span>
+              </div>
+              <div className="mt-1 text-sm text-slate-200">
+                Total clube: <span className="font-semibold">{clubCourts ?? "-"}</span>
+              </div>
+              <div className="mt-1 text-sm text-slate-200">
+                Disponíveis (rodada): <span className="font-semibold">{courtsAvailable ?? "-"}</span>
+              </div>
+              <div className="mt-1 text-xs text-slate-400">Limite atual (grupos): {courtsLimit ?? "-"}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <TabButton active={tab === "config"} onClick={() => setTab("config")} label="Configuração" />
+          <TabButton active={tab === "gen"} onClick={() => setTab("gen")} label="Geração" />
+          <TabButton active={tab === "online"} onClick={() => setTab("online")} label="On-line" />
+        </div>
+
+        {tab === "config" && (
+          <div className="card space-y-4">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 no-print">
+                <div>
+                  <div className="font-extrabold">Quadras disponíveis (no dia)</div>
+                  <div className="text-xs text-slate-400">
+                    Clube tem {clubCourts ?? "?"} quadras no total. Aqui você define quantas estarão liberadas.
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <div className="text-xs text-slate-300 mb-1">Disponíveis</div>
+                    <input
+                      className="w-[140px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                      value={courtsAvailable ?? ""}
+                      onChange={(e) => setCourtsAvailable(e.target.value ? Number(e.target.value) : null)}
+                      inputMode="numeric"
+                      disabled={loading || !roundId}
                     />
                   </div>
 
-                  <div className="w-[160px]">
-                    <div className="text-xs text-slate-300 mb-1">Placar até</div>
-                    <select
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 outline-none focus:border-white/20"
-                      value={createRoundScoreTarget}
-                      onChange={(e) => setCreateRoundScoreTarget(Number(e.target.value) as 4 | 5 | 6)}
-                      disabled={creatingRound || loading}
-                    >
-                      <option value={4}>4</option>
-                      <option value={5}>5</option>
-                      <option value={6}>6</option>
-                    </select>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={createRound}
-                    disabled={creatingRound || loading}
-                    title="Cria a rodada para esta etapa"
-                  >
-                    {creatingRound ? "Criando..." : "Criar Rodada"}
+                  <button className="btn-primary" onClick={saveCourtsAvailable} disabled={loading || !roundId}>
+                    Salvar quadras
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="text-xs text-slate-300">Quadras</div>
-            <div className="mt-1 text-sm text-slate-200">
-              Clube: <span className="font-semibold">{club?.name ?? "-"}</span>
             </div>
-            <div className="mt-1 text-sm text-slate-200">
-              Total clube: <span className="font-semibold">{clubCourts ?? "-"}</span>
-            </div>
-            <div className="mt-1 text-sm text-slate-200">
-              Disponíveis (rodada): <span className="font-semibold">{courtsAvailable ?? "-"}</span>
-            </div>
-            <div className="mt-1 text-xs text-slate-400">Limite atual (grupos): {courtsLimit ?? "-"}</div>
-          </div>
-        </div>
-      </div>
 
-      <div className="flex flex-wrap gap-2">
-        <TabButton active={tab === "config"} onClick={() => setTab("config")} label="Configuração" />
-        <TabButton active={tab === "gen"} onClick={() => setTab("gen")} label="Geração" />
-        <TabButton active={tab === "online"} onClick={() => setTab("online")} label="On-line" />
-      </div>
-
-      {tab === "config" && (
-        <div className="card space-y-4">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 no-print">
-              <div>
-                <div className="font-extrabold">Quadras disponíveis (no dia)</div>
-                <div className="text-xs text-slate-400">
-                  Clube tem {clubCourts ?? "?"} quadras no total. Aqui você define quantas estarão liberadas.
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-end gap-2">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
                 <div>
-                  <div className="text-xs text-slate-300 mb-1">Disponíveis</div>
-                  <input
-                    className="w-[140px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-                    value={courtsAvailable ?? ""}
-                    onChange={(e) => setCourtsAvailable(e.target.value ? Number(e.target.value) : null)}
-                    inputMode="numeric"
-                    disabled={loading || !roundId}
-                  />
-                </div>
-
-                <button className="btn-primary" onClick={saveCourtsAvailable} disabled={loading || !roundId}>
-                  Salvar quadras
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-              <div>
-                <div className="font-extrabold">Adicionar Grupo</div>
-                <div className="text-xs text-slate-400">Escolha o cruzamento (ex.: A+C / B+D)</div>
-              </div>
-
-              <div className="flex flex-wrap items-end gap-2">
-                <div>
-                  <div className="text-xs text-slate-300 mb-1">Cat A</div>
-                  <CatSelect value={newCatA} onChange={setNewCatA} disabled={loading || !roundId} />
-                </div>
-
-                <div>
-                  <div className="text-xs text-slate-300 mb-1">Cat B</div>
-                  <CatSelect value={newCatB} onChange={setNewCatB} disabled={loading || !roundId} />
-                </div>
-
-                <button className="btn-primary" onClick={addGroup} disabled={loading || !roundId}>
-                  Adicionar
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {groups.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
-              Nenhum grupo encontrado para esta rodada. Use "Adicionar Grupo".
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {groups.map((g) => (
-                <div key={g.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div>
-                      <div className="font-extrabold">{g.label ?? (g.cat_a ?? "?") + "+" + (g.cat_b ?? "?")}</div>
-                      <div className="text-xs text-slate-400">
-                        sort_order: {g.sort_order ?? "-"} | group_id: <span className="font-mono">{g.id.slice(0, 8)}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-end gap-2">
-                      <div>
-                        <div className="text-xs text-slate-300 mb-1">Quadra de</div>
-                        <input
-                          className="w-[120px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-                          value={g.court_from ?? ""}
-                          onChange={(e) => setGroupCourt(g.id, "court_from", e.target.value ? Number(e.target.value) : null)}
-                          inputMode="numeric"
-                        />
-                      </div>
-
-                      <div>
-                        <div className="text-xs text-slate-300 mb-1">até</div>
-                        <input
-                          className="w-[120px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-                          value={g.court_to ?? ""}
-                          onChange={(e) => setGroupCourt(g.id, "court_to", e.target.value ? Number(e.target.value) : null)}
-                          inputMode="numeric"
-                        />
-                      </div>
-
-                      <button
-                        className="btn-primary"
-                        onClick={async () => {
-                          setLoading(true)
-                          try {
-                            await saveGroupCourts(g)
-                          } catch (e: any) {
-                            setErr(e?.message || String(e))
-                          } finally {
-                            setLoading(false)
-                          }
-                        }}
-                        disabled={loading}
-                      >
-                        Salvar
-                      </button>
-
-                      <button className="btn-ghost" onClick={() => removeGroup(g.id)} disabled={loading}>
-                        Remover
-                      </button>
-                    </div>
+                  <div className="font-extrabold">Adicionar Grupo</div>
+                  <div className="text-xs text-slate-400">
+                    {roundModeNormalized === "americanocat"
+                      ? "Escolha a mesma categoria (ex.: A+A / B+B / C+C / D+D)"
+                      : "Escolha o cruzamento (ex.: A+C / B+D)"}
                   </div>
                 </div>
-              ))}
+
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <div className="text-xs text-slate-300 mb-1">Cat A</div>
+                    <CatSelect value={newCatA} onChange={setNewCatA} disabled={loading || !roundId} />
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-slate-300 mb-1">Cat B</div>
+                    <CatSelect value={newCatB} onChange={setNewCatB} disabled={loading || !roundId} />
+                  </div>
+
+                  <button className="btn-primary" onClick={addGroup} disabled={loading || !roundId}>
+                    Adicionar
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-      )}
 
-      {tab === "gen" && (
-        <div className="card space-y-4">
-          <div>
-            <div className="text-lg font-extrabold">Geração</div>
-            <div className="text-sm text-slate-300">
-              Operar grupo a grupo. Em <span className="font-semibold">Duplas Fixas</span>, você pode usar formação{" "}
-              <span className="font-semibold">Automática</span> ou <span className="font-semibold">Manual</span>.
-            </div>
-          </div>
-
-          {groups.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
-              Nenhum grupo encontrado. Vá na aba Configuração e crie os grupos.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {groups.map((g) => {
-                const qty = getPairsQty(g.id)
-                const c = genCounts[g.id]
-                const aCat = String(g.cat_a || "?").toUpperCase()
-                const bCat = String(g.cat_b || "?").toUpperCase()
-                const label = g.label ?? (aCat + "+" + bCat)
-                const courtsTxt = g.court_from && g.court_to ? `${g.court_from}-${g.court_to}` : "-"
-
-                const a = c?.a ?? 0
-                const b = c?.b ?? 0
-                const needA = c?.needA ?? Math.max(0, qty - a)
-                const needB = c?.needB ?? Math.max(0, qty - b)
-                const pairs = c?.pairs ?? 0
-
-                const pairingMode = getGroupPairingMode(g.id)
-                const draft = getManualDraft(g.id)
-                const manualRoster = getManualParticipants(g.id)
-                const manualPairsForGroup = getManualPairs(g.id)
-                const manualAvailable = getAvailableManualParticipants(g.id)
-                const isFixedPairsRound = roundMode === "fixed_pairs"
-
-                return (
+            {groups.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
+                Nenhum grupo encontrado para esta rodada. Use "Adicionar Grupo".
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {groups.map((g) => (
                   <div key={g.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="text-xl font-extrabold">{label}</div>
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div>
+                        <div className="font-extrabold">{g.label ?? (g.cat_a ?? "?") + "+" + (g.cat_b ?? "?")}</div>
                         <div className="text-xs text-slate-400">
-                          group_id: <span className="font-mono">{String(g.id).slice(0, 8)}</span> | Courts:{" "}
-                          <span className="font-mono">{courtsTxt}</span>
-                        </div>
-
-                        <div className="mt-2 text-sm text-slate-200">
-                          <span className="font-semibold">{aCat}</span>: {a} &nbsp;/&nbsp;
-                          <span className="font-semibold">{bCat}</span>: {b} &nbsp;|&nbsp;
-                          faltam: {needA + needB} ( {aCat}:{needA} / {bCat}:{needB} )
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-400">
-                          duplas existentes no grupo: <span className="font-semibold">{pairs}</span>
+                          sort_order: {g.sort_order ?? "-"} | group_id: <span className="font-mono">{g.id.slice(0, 8)}</span>
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-stretch gap-2 min-w-[320px]">
-                        <div className="flex items-end gap-2">
-                          <div className="flex-1">
-                            <div className="text-xs text-slate-300 mb-1">Qtd duplas</div>
-                            <input
-                              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-                              value={qty}
-                              onChange={(e) => setPairsQtyValue(g.id, e.target.value ? Number(e.target.value) : 0)}
-                              inputMode="numeric"
-                              disabled={loading || !roundId}
-                            />
-                          </div>
-
-                          <button
-                            className="btn-ghost"
-                            onClick={() => refreshGenCountsForGroup(g)}
-                            disabled={loading || !roundId || !stageId}
-                            title="Recalcular contadores"
-                          >
-                            Recalcular
-                          </button>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div>
+                          <div className="text-xs text-slate-300 mb-1">Quadra de</div>
+                          <input
+                            className="w-[120px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                            value={g.court_from ?? ""}
+                            onChange={(e) => setGroupCourt(g.id, "court_from", e.target.value ? Number(e.target.value) : null)}
+                            inputMode="numeric"
+                          />
                         </div>
 
-                        {isFixedPairsRound && (
-                          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                            <div className="text-xs text-slate-300 mb-2">Formação das duplas</div>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                className={pairingMode === "auto" ? "btn-primary" : "btn-ghost"}
-                                onClick={() => setGroupPairingModeValue(g.id, "auto")}
-                              >
-                                Automática
-                              </button>
+                        <div>
+                          <div className="text-xs text-slate-300 mb-1">até</div>
+                          <input
+                            className="w-[120px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                            value={g.court_to ?? ""}
+                            onChange={(e) => setGroupCourt(g.id, "court_to", e.target.value ? Number(e.target.value) : null)}
+                            inputMode="numeric"
+                          />
+                        </div>
 
-                              <button
-                                type="button"
-                                className={pairingMode === "manual" ? "btn-primary" : "btn-ghost"}
-                                onClick={async () => {
-                                  setGroupPairingModeValue(g.id, "manual")
-                                  if (manualRoster.length === 0) {
-                                    await loadManualParticipantsForGroup(g)
-                                  }
-                                }}
-                              >
-                                Manual
-                              </button>
-                            </div>
+                        <button
+                          className="btn-primary"
+                          onClick={async () => {
+                            setLoading(true)
+                            try {
+                              await saveGroupCourts(g)
+                            } catch (e: any) {
+                              setErr(e?.message || String(e))
+                            } finally {
+                              setLoading(false)
+                            }
+                          }}
+                          disabled={loading}
+                        >
+                          Salvar
+                        </button>
+
+                        <button className="btn-ghost" onClick={() => removeGroup(g.id)} disabled={loading}>
+                          Remover
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "gen" && (
+          <div className="card space-y-4">
+            <div>
+              <div className="text-lg font-extrabold">Geração</div>
+              <div className="text-sm text-slate-300">
+                {roundModeNormalized === "fixed_pairs" ? (
+                  <>
+                    Operar grupo a grupo. Em <span className="font-semibold">Duplas Fixas</span>, você pode usar formação{" "}
+                    <span className="font-semibold">Automática</span> ou <span className="font-semibold">Manual</span>.
+                  </>
+                ) : roundModeNormalized === "americanocat" ? (
+                  <>
+                    Operar grupo a grupo. Em <span className="font-semibold">Americano CAT</span>, os jogos são gerados
+                    dentro da mesma categoria, com duplas temporárias e sem repetição de dupla na rodada.
+                  </>
+                ) : (
+                  <>
+                    Operar grupo a grupo no modo <span className="font-semibold">Americano</span>.
+                  </>
+                )}
+              </div>
+            </div>
+
+            {groups.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
+                Nenhum grupo encontrado. Vá na aba Configuração e crie os grupos.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {groups.map((g) => {
+                  const qty = getPairsQty(g.id)
+                  const c = genCounts[g.id]
+                  const aCat = String(g.cat_a || "?").toUpperCase()
+                  const bCat = String(g.cat_b || "?").toUpperCase()
+                  const label = g.label ?? (aCat + "+" + bCat)
+                  const courtsTxt = g.court_from && g.court_to ? `${g.court_from}-${g.court_to}` : "-"
+                  const isFixedPairsRound = roundModeNormalized === "fixed_pairs"
+                  const isAmericanoCatRound = roundModeNormalized === "americanocat"
+
+                  const a = c?.a ?? 0
+                  const b = c?.b ?? 0
+                  const needA = c?.needA ?? Math.max(0, qty - a)
+                  const needB = c?.needB ?? Math.max(0, qty - b)
+                  const pairs = c?.pairs ?? 0
+
+                  const pairingMode = getGroupPairingMode(g.id)
+                  const draft = getManualDraft(g.id)
+                  const manualRoster = getManualParticipants(g.id)
+                  const manualPairsForGroup = getManualPairs(g.id)
+                  const manualAvailable = getAvailableManualParticipants(g.id)
+                  const audit = groupAudit[g.id]
+
+                  return (
+                    <div key={g.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="text-xl font-extrabold">{label}</div>
+                          <div className="text-xs text-slate-400">
+                            group_id: <span className="font-mono">{String(g.id).slice(0, 8)}</span> | Courts:{" "}
+                            <span className="font-mono">{courtsTxt}</span>
                           </div>
-                        )}
 
-                        {(!isFixedPairsRound || pairingMode === "auto") && (
-                          <>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                className="btn-primary"
-                                onClick={() => genAutofillGuestsForGroup(g)}
-                                disabled={loading || !roundId || !stageId}
-                              >
-                                Autofill convidados
-                              </button>
-
-                              <button
-                                className="btn-primary"
-                                onClick={() => genDrawFixedPairsForGroup(g)}
-                                disabled={loading || !roundId}
-                                title="Sorteia duplas fixas (limpa duplas antigas do grupo)"
-                              >
-                                Sortear
-                              </button>
-
-                              <button
-                                className="btn-ghost"
-                                onClick={() => loadPairsForGroup(g.id)}
-                                disabled={loading || !roundId || pairsLoading[g.id]}
-                                title="Carrega e mostra as duplas sorteadas do grupo"
-                              >
-                                {pairsLoading[g.id] ? "Carregando..." : "Ver duplas"}
-                              </button>
-
-                              <button
-                                className="btn-ghost"
-                                onClick={async () => {
-                                  try {
-                                    setLoading(true)
-                                    setErr(null)
-                                    setMsg(null)
-                                    await clearPairsForGroup(g.id)
-                                    await refreshGenCountsForGroup(g)
-                                    setMsg(`Duplas do grupo ${label} limpas.`)
-                                  } catch (e: any) {
-                                    setErr(e?.message || String(e))
-                                    alert("Erro ao limpar duplas do grupo: " + (e?.message || String(e)))
-                                  } finally {
-                                    setLoading(false)
-                                  }
-                                }}
-                                disabled={loading || !roundId}
-                                title="Apaga apenas as duplas (round_pairs) deste grupo, mantendo roster e rodada."
-                              >
-                                Limpar duplas
-                              </button>
-
-                              <button
-                                className="btn-ghost"
-                                onClick={() => resetGroupGuestsToPairs(g)}
-                                disabled={loading || !roundId || !stageId}
-                                title="Limpa duplas do grupo e ajusta convidados excedentes para bater com a Qtd duplas (preserva atletas)."
-                              >
-                                Reset grupo
-                              </button>
-
-                              <button
-                                className="btn-primary"
-                                onClick={async () => {
-                                  try {
-                                    setLoading(true)
-                                    setErr(null)
-
-                                    const ok = await genCanGenerateGames(g.id)
-                                    if (!ok) {
-                                      alert("Gere as duplas primeiro (mínimo 2 duplas no grupo).")
-                                      return
-                                    }
-
-                                    await genGenerateMatchesForGroup(g.id)
-                                    alert("Jogos gerados OK.")
-                                  } catch (e: any) {
-                                    setErr(e?.message || String(e))
-                                    alert("Erro: " + (e?.message || String(e)))
-                                  } finally {
-                                    setLoading(false)
-                                  }
-                                }}
-                                disabled={loading || !roundId}
-                                title="Gera jogos todas-vs-todas para as duplas do grupo"
-                              >
-                                Gerar jogos
-                              </button>
-                            </div>
-
-                            <div className="text-[11px] text-slate-400">
-                              Nota: "Gerar jogos" usa RPC{" "}
-                              <span className="font-mono">admin_generate_round_robin_matches_for_group</span>.
-                            </div>
-                          </>
-                        )}
-
-                        {isFixedPairsRound && pairingMode === "manual" && (
-                          <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-extrabold">Montagem manual de duplas</div>
-                                <div className="text-xs text-slate-300">
-                                  Participantes elegíveis do grupo: atletas e convidados presentes no{" "}
-                                  <span className="font-semibold">stage_roster</span>.
-                                </div>
+                          {isAmericanoCatRound ? (
+                            <>
+                              <div className="mt-2 text-sm text-slate-200">
+                                <span className="font-semibold">{aCat}</span>: {a} atleta(s)/convidado(s) elegíveis
+                              </div>
+                              <div className="mt-1 text-xs text-slate-400">
+                                mínimo para gerar: <span className="font-semibold">4</span> | faltam:{" "}
+                                <span className="font-semibold">{needA}</span>
+                              </div>
+                              <div className="mt-1 text-xs text-slate-400">
+                                pares já usados na rodada para este grupo: <span className="font-semibold">{pairs}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="mt-2 text-sm text-slate-200">
+                                <span className="font-semibold">{aCat}</span>: {a} &nbsp;/&nbsp;
+                                <span className="font-semibold">{bCat}</span>: {b} &nbsp;|&nbsp;
+                                faltam: {needA + needB} ( {aCat}:{needA} / {bCat}:{needB} )
                               </div>
 
+                              <div className="mt-1 text-xs text-slate-400">
+                                duplas existentes no grupo: <span className="font-semibold">{pairs}</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col items-stretch gap-2 min-w-[320px]">
+                          {!isAmericanoCatRound && (
+                            <div className="flex items-end gap-2">
+                              <div className="flex-1">
+                                <div className="text-xs text-slate-300 mb-1">Qtd duplas</div>
+                                <input
+                                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                                  value={qty}
+                                  onChange={(e) => setPairsQtyValue(g.id, e.target.value ? Number(e.target.value) : 0)}
+                                  inputMode="numeric"
+                                  disabled={loading || !roundId}
+                                />
+                              </div>
+
+                              <button
+                                className="btn-ghost"
+                                onClick={() => refreshGenCountsForGroup(g)}
+                                disabled={loading || !roundId || !stageId}
+                                title="Recalcular contadores"
+                              >
+                                Recalcular
+                              </button>
+                            </div>
+                          )}
+
+                          {isAmericanoCatRound && (
+                            <>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  className="btn-ghost"
+                                  onClick={() => refreshGenCountsForGroup(g)}
+                                  disabled={loading || !roundId || !stageId}
+                                  title="Recalcular contadores"
+                                >
+                                  Recalcular
+                                </button>
+
+                                <button
+                                  className="btn-primary"
+                                  onClick={async () => {
+                                    try {
+                                      setLoading(true)
+                                      setErr(null)
+
+                                      const ok = await genCanGenerateGames(g)
+                                      if (!ok) {
+                                        alert("É necessário ter no mínimo 4 atletas/convidados da mesma categoria.")
+                                        return
+                                      }
+
+                                      await genGenerateMatchesForGroup(g.id)
+                                      await refreshGenCountsForGroup(g)
+                                      await loadPairsForGroup(g.id)
+                                      await loadAuditForGroup(g.id)
+                                      alert("Jogos do Americano CAT gerados OK.")
+                                    } catch (e: any) {
+                                      setErr(e?.message || String(e))
+                                      alert("Erro: " + (e?.message || String(e)))
+                                    } finally {
+                                      setLoading(false)
+                                    }
+                                  }}
+                                  disabled={loading || !roundId}
+                                  title="Gera jogos do Americano CAT para este grupo"
+                                >
+                                  Gerar jogos
+                                </button>
+
+                                <button
+                                  className="btn-ghost"
+                                  onClick={() => loadPairsForGroup(g.id)}
+                                  disabled={loading || !roundId || pairsLoading[g.id]}
+                                  title="Lista as duplas já usadas/geradas para este grupo"
+                                >
+                                  {pairsLoading[g.id] ? "Carregando..." : "Ver duplas"}
+                                </button>
+                              </div>
+
+                              <div className="text-[11px] text-slate-400">
+                                No <span className="font-mono">americanocat</span>, o botão <span className="font-semibold">Gerar jogos</span> chama a RPC{" "}
+                                <span className="font-mono">admin_generate_americanocat_matches_for_group</span>.
+                              </div>
+                            </>
+                          )}
+
+                          {isFixedPairsRound && (
+                            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                              <div className="text-xs text-slate-300 mb-2">Formação das duplas</div>
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
+                                  className={pairingMode === "auto" ? "btn-primary" : "btn-ghost"}
+                                  onClick={() => setGroupPairingModeValue(g.id, "auto")}
+                                >
+                                  Automática
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className={pairingMode === "manual" ? "btn-primary" : "btn-ghost"}
+                                  onClick={async () => {
+                                    setGroupPairingModeValue(g.id, "manual")
+                                    if (manualRoster.length === 0) {
+                                      await loadManualParticipantsForGroup(g)
+                                    }
+                                  }}
+                                >
+                                  Manual
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {!isAmericanoCatRound && (!isFixedPairsRound || pairingMode === "auto") && (
+                            <>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  className="btn-primary"
+                                  onClick={() => genAutofillGuestsForGroup(g)}
+                                  disabled={loading || !roundId || !stageId}
+                                >
+                                  Autofill convidados
+                                </button>
+
+                                <button
+                                  className="btn-primary"
+                                  onClick={() => genDrawFixedPairsForGroup(g)}
+                                  disabled={loading || !roundId}
+                                  title="Sorteia duplas fixas (limpa duplas antigas do grupo)"
+                                >
+                                  Sortear
+                                </button>
+
+                                <button
                                   className="btn-ghost"
-                                  onClick={() => loadManualParticipantsForGroup(g)}
-                                  disabled={loading || manualLoading[g.id] || !stageId}
+                                  onClick={() => loadPairsForGroup(g.id)}
+                                  disabled={loading || !roundId || pairsLoading[g.id]}
+                                  title="Carrega e mostra as duplas sorteadas do grupo"
                                 >
-                                  {manualLoading[g.id] ? "Carregando..." : "Carregar participantes"}
+                                  {pairsLoading[g.id] ? "Carregando..." : "Ver duplas"}
                                 </button>
 
                                 <button
-                                  type="button"
                                   className="btn-ghost"
-                                  onClick={() => clearManualPairs(g.id)}
-                                  disabled={loading || manualPairsForGroup.length === 0}
+                                  onClick={async () => {
+                                    try {
+                                      setLoading(true)
+                                      setErr(null)
+                                      setMsg(null)
+                                      await clearPairsForGroup(g.id)
+                                      await refreshGenCountsForGroup(g)
+                                      setMsg(`Duplas do grupo ${label} limpas.`)
+                                    } catch (e: any) {
+                                      setErr(e?.message || String(e))
+                                      alert("Erro ao limpar duplas do grupo: " + (e?.message || String(e)))
+                                    } finally {
+                                      setLoading(false)
+                                    }
+                                  }}
+                                  disabled={loading || !roundId}
+                                  title="Apaga apenas as duplas (round_pairs) deste grupo, mantendo roster e rodada."
                                 >
-                                  Limpar duplas montadas
+                                  Limpar duplas
                                 </button>
 
                                 <button
-                                  type="button"
-                                  className="btn-primary"
-                                  onClick={() => saveManualPairsToRoundPairs(g)}
-                                  disabled={loading || manualPairsForGroup.length < 2}
-                                  title="Salva as duplas manuais em round_pairs"
+                                  className="btn-ghost"
+                                  onClick={() => resetGroupGuestsToPairs(g)}
+                                  disabled={loading || !roundId || !stageId}
+                                  title="Limpa duplas do grupo e ajusta convidados excedentes para bater com a Qtd duplas (preserva atletas)."
                                 >
-                                  Salvar duplas
+                                  Reset grupo
                                 </button>
 
                                 <button
-                                  type="button"
                                   className="btn-primary"
-                                  onClick={() => saveAndGenerateManualPairs(g)}
-                                  disabled={loading || manualPairsForGroup.length < 2}
-                                  title="Salva as duplas manuais e já gera os jogos"
+                                  onClick={async () => {
+                                    try {
+                                      setLoading(true)
+                                      setErr(null)
+
+                                      const ok = await genCanGenerateGames(g)
+                                      if (!ok) {
+                                        alert("Gere as duplas primeiro (mínimo 2 duplas no grupo).")
+                                        return
+                                      }
+
+                                      await genGenerateMatchesForGroup(g.id)
+                                      await loadAuditForGroup(g.id)
+                                      alert("Jogos gerados OK.")
+                                    } catch (e: any) {
+                                      setErr(e?.message || String(e))
+                                      alert("Erro: " + (e?.message || String(e)))
+                                    } finally {
+                                      setLoading(false)
+                                    }
+                                  }}
+                                  disabled={loading || !roundId}
+                                  title="Gera jogos todas-vs-todas para as duplas do grupo"
                                 >
-                                  Salvar + Gerar jogos
+                                  Gerar jogos
                                 </button>
                               </div>
-                            </div>
 
-                            <div className="grid gap-3 md:grid-cols-4">
-                              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs text-slate-400">Elegíveis</div>
-                                <div className="mt-1 text-xl font-extrabold">{manualRoster.length}</div>
+                              <div className="text-[11px] text-slate-400">
+                                Nota: "Gerar jogos" usa RPC{" "}
+                                <span className="font-mono">admin_generate_round_robin_matches_for_group</span>.
                               </div>
+                            </>
+                          )}
 
-                              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs text-slate-400">Duplas montadas</div>
-                                <div className="mt-1 text-xl font-extrabold">{manualPairsForGroup.length}</div>
-                              </div>
-
-                              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs text-slate-400">Usados</div>
-                                <div className="mt-1 text-xl font-extrabold">{getUsedRosterIds(g.id).size}</div>
-                              </div>
-
-                              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                                <div className="text-xs text-slate-400">Disponíveis</div>
-                                <div className="mt-1 text-xl font-extrabold">{manualAvailable.length}</div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                              <div className="text-sm font-semibold mb-3">Nova dupla</div>
-
-                              <div className="grid gap-3 md:grid-cols-2">
-                                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
-                                    Participante 1
+                          {isFixedPairsRound && pairingMode === "manual" && (
+                            <div className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+                              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-extrabold">Montagem manual de duplas</div>
+                                  <div className="text-xs text-slate-300">
+                                    Participantes elegíveis do grupo: atletas e convidados presentes no{" "}
+                                    <span className="font-semibold">stage_roster</span>.
                                   </div>
-
-                                  {draft.leftRosterId ? (
-                                    <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-3">
-                                      <div className="text-base font-bold text-white">
-                                        {getManualParticipantByRosterId(g.id, draft.leftRosterId)?.display_name ?? "—"}
-                                      </div>
-                                      <div className="mt-1 text-sm text-slate-200">
-                                        {(() => {
-                                          const p = getManualParticipantByRosterId(g.id, draft.leftRosterId)
-                                          return p ? `${kindBadge(p.kind)} • Categoria ${p.category}` : "—"
-                                        })()}
-                                      </div>
-                                      <button
-                                        type="button"
-                                        className="mt-3 btn-ghost"
-                                        onClick={() => setManualDraft(g.id, { leftRosterId: "" })}
-                                      >
-                                        Limpar P1
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-3 py-4 text-sm text-slate-400">
-                                      Clique em um card abaixo para escolher o Participante 1
-                                    </div>
-                                  )}
                                 </div>
 
-                                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
-                                    Participante 2
-                                  </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => loadManualParticipantsForGroup(g)}
+                                    disabled={loading || manualLoading[g.id] || !stageId}
+                                  >
+                                    {manualLoading[g.id] ? "Carregando..." : "Carregar participantes"}
+                                  </button>
 
-                                  {draft.rightRosterId ? (
-                                    <div className="rounded-xl border border-sky-400/40 bg-sky-400/10 px-3 py-3">
-                                      <div className="text-base font-bold text-white">
-                                        {getManualParticipantByRosterId(g.id, draft.rightRosterId)?.display_name ?? "—"}
-                                      </div>
-                                      <div className="mt-1 text-sm text-slate-200">
-                                        {(() => {
-                                          const p = getManualParticipantByRosterId(g.id, draft.rightRosterId)
-                                          return p ? `${kindBadge(p.kind)} • Categoria ${p.category}` : "—"
-                                        })()}
-                                      </div>
-                                      <button
-                                        type="button"
-                                        className="mt-3 btn-ghost"
-                                        onClick={() => setManualDraft(g.id, { rightRosterId: "" })}
-                                      >
-                                        Limpar P2
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-3 py-4 text-sm text-slate-400">
-                                      Clique em um card abaixo para escolher o Participante 2
-                                    </div>
-                                  )}
+                                  <button
+                                    type="button"
+                                    className="btn-ghost"
+                                    onClick={() => clearManualPairs(g.id)}
+                                    disabled={loading || manualPairsForGroup.length === 0}
+                                  >
+                                    Limpar duplas montadas
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="btn-primary"
+                                    onClick={() => saveManualPairsToRoundPairs(g)}
+                                    disabled={loading || manualPairsForGroup.length < 2}
+                                    title="Salva as duplas manuais em round_pairs"
+                                  >
+                                    Salvar duplas
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="btn-primary"
+                                    onClick={() => saveAndGenerateManualPairs(g)}
+                                    disabled={loading || manualPairsForGroup.length < 2}
+                                    title="Salva as duplas manuais e já gera os jogos"
+                                  >
+                                    Salvar + Gerar jogos
+                                  </button>
                                 </div>
                               </div>
 
-                              <div className="mt-4 flex flex-wrap items-center gap-3">
-                                <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm">
-                                  <span className="text-slate-400">Prévia: </span>
-                                  <span className="font-bold text-white">
-                                    {draft.leftRosterId
-                                      ? (getManualParticipantByRosterId(g.id, draft.leftRosterId)?.display_name ?? "—")
-                                      : "—"}
-                                  </span>
-                                  <span className="mx-2 text-slate-400">+</span>
-                                  <span className="font-bold text-white">
-                                    {draft.rightRosterId
-                                      ? (getManualParticipantByRosterId(g.id, draft.rightRosterId)?.display_name ?? "—")
-                                      : "—"}
-                                  </span>
+                              <div className="grid gap-3 md:grid-cols-4">
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                  <div className="text-xs text-slate-400">Elegíveis</div>
+                                  <div className="mt-1 text-xl font-extrabold">{manualRoster.length}</div>
                                 </div>
 
-                                <button
-                                  type="button"
-                                  className="btn-primary"
-                                  onClick={() => addManualPair(g)}
-                                  disabled={!draft.leftRosterId || !draft.rightRosterId}
-                                >
-                                  Adicionar dupla
-                                </button>
-                              </div>
-                            </div>
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                  <div className="text-xs text-slate-400">Duplas montadas</div>
+                                  <div className="mt-1 text-xl font-extrabold">{manualPairsForGroup.length}</div>
+                                </div>
 
-                            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                              <div className="flex items-center justify-between gap-3 mb-3">
-                                <div className="text-sm font-semibold">Participantes disponíveis</div>
-                                <div className="text-xs text-slate-400">
-                                  Clique no card inteiro para alternar:{" "}
-                                  <span className="font-semibold">P1 → P2 → limpar</span>
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                  <div className="text-xs text-slate-400">Usados</div>
+                                  <div className="mt-1 text-xl font-extrabold">{getUsedRosterIds(g.id).size}</div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                  <div className="text-xs text-slate-400">Disponíveis</div>
+                                  <div className="mt-1 text-xl font-extrabold">{manualAvailable.length}</div>
                                 </div>
                               </div>
 
-                              {manualRoster.length === 0 ? (
-                                <div className="text-sm text-slate-400">Nenhum participante carregado ainda.</div>
-                              ) : (
-                                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                  {manualRoster.map((p) => {
-                                    const used = getUsedRosterIds(g.id).has(p.roster_id)
-                                    const isLeft = isManualPickLeft(g.id, p.roster_id)
-                                    const isRight = isManualPickRight(g.id, p.roster_id)
+                              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                                <div className="text-sm font-semibold mb-3">Nova dupla</div>
 
-                                    const baseCls = used
-                                      ? "border-white/5 bg-white/5 opacity-45 cursor-not-allowed"
-                                      : isLeft
-                                        ? "border-amber-400/60 bg-amber-400/10 cursor-pointer"
-                                        : isRight
-                                          ? "border-sky-400/60 bg-sky-400/10 cursor-pointer"
-                                          : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10 cursor-pointer"
+                                <div className="grid gap-3 md:grid-cols-2">
+                                  <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+                                      Participante 1
+                                    </div>
 
-                                    return (
-                                      <div
-                                        key={p.roster_id}
-                                        className={`rounded-2xl border px-4 py-4 transition ${baseCls}`}
-                                        onClick={() => {
-                                          if (used) return
-                                          cycleManualPick(g.id, p.roster_id)
-                                        }}
-                                        title={
-                                          used
-                                            ? "Participante já está em dupla"
-                                            : "Clique para alternar entre P1, P2 e limpar"
-                                        }
-                                      >
-                                        <div className="flex items-start justify-between gap-3">
-                                          <div className="min-w-0">
-                                            <div className="text-base font-bold text-white break-words">
-                                              {p.display_name}
-                                            </div>
-                                            <div className="mt-1 text-sm text-slate-300">
-                                              {kindBadge(p.kind)} • Categoria {p.category}
-                                            </div>
-                                          </div>
-
-                                          <div className="flex flex-col items-end gap-2 shrink-0">
-                                            {used ? (
-                                              <span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[11px] font-semibold text-slate-300">
-                                                Em dupla
-                                              </span>
-                                            ) : isLeft ? (
-                                              <span className="rounded-full border border-amber-400/30 bg-amber-400/15 px-2 py-1 text-[11px] font-semibold text-amber-200">
-                                                P1
-                                              </span>
-                                            ) : isRight ? (
-                                              <span className="rounded-full border border-sky-400/30 bg-sky-400/15 px-2 py-1 text-[11px] font-semibold text-sky-200">
-                                                P2
-                                              </span>
-                                            ) : (
-                                              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">
-                                                Disponível
-                                              </span>
-                                            )}
-                                          </div>
+                                    {draft.leftRosterId ? (
+                                      <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-3">
+                                        <div className="text-base font-bold text-white">
+                                          {getManualParticipantByRosterId(g.id, draft.leftRosterId)?.display_name ?? "—"}
                                         </div>
-
-                                        {!used && (
-                                          <div className="mt-3 text-xs text-slate-400">
-                                            {isLeft
-                                              ? "Clique novamente para mover para P2"
-                                              : isRight
-                                                ? "Clique novamente para limpar seleção"
-                                                : "Clique para selecionar"}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                              <div className="text-sm font-semibold mb-2">Duplas montadas</div>
-
-                              {manualPairsForGroup.length === 0 ? (
-                                <div className="text-sm text-slate-400">Nenhuma dupla montada ainda.</div>
-                              ) : (
-                                <div className="space-y-2">
-                                  {manualPairsForGroup.map((p, idx) => (
-                                    <div key={p.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                          <div className="text-xs text-slate-400">Dupla #{idx + 1}</div>
-                                          <div className="text-base font-bold text-white">
-                                            {p.left.display_name} <span className="text-slate-400">+</span> {p.right.display_name}
-                                          </div>
-                                          <div className="mt-1 text-sm text-slate-300">
-                                            {kindBadge(p.left.kind)} {p.left.category} • {kindBadge(p.right.kind)} {p.right.category}
-                                          </div>
+                                        <div className="mt-1 text-sm text-slate-200">
+                                          {(() => {
+                                            const p = getManualParticipantByRosterId(g.id, draft.leftRosterId)
+                                            return p ? `${kindBadge(p.kind)} • Categoria ${p.category}` : "—"
+                                          })()}
                                         </div>
-
                                         <button
                                           type="button"
-                                          className="btn-ghost"
-                                          onClick={() => removeManualPair(g.id, p.id)}
+                                          className="mt-3 btn-ghost"
+                                          onClick={() => setManualDraft(g.id, { leftRosterId: "" })}
                                         >
-                                          Remover
+                                          Limpar P1
                                         </button>
                                       </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                    ) : (
+                                      <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-3 py-4 text-sm text-slate-400">
+                                        Clique em um card abaixo para escolher o Participante 1
+                                      </div>
+                                    )}
+                                  </div>
 
-                              <div className="mt-3 text-xs text-slate-400">
-                                Monte ao menos <span className="font-semibold">2 duplas</span> para salvar/gerar jogos.
+                                  <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+                                      Participante 2
+                                    </div>
+
+                                    {draft.rightRosterId ? (
+                                      <div className="rounded-xl border border-sky-400/40 bg-sky-400/10 px-3 py-3">
+                                        <div className="text-base font-bold text-white">
+                                          {getManualParticipantByRosterId(g.id, draft.rightRosterId)?.display_name ?? "—"}
+                                        </div>
+                                        <div className="mt-1 text-sm text-slate-200">
+                                          {(() => {
+                                            const p = getManualParticipantByRosterId(g.id, draft.rightRosterId)
+                                            return p ? `${kindBadge(p.kind)} • Categoria ${p.category}` : "—"
+                                          })()}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          className="mt-3 btn-ghost"
+                                          onClick={() => setManualDraft(g.id, { rightRosterId: "" })}
+                                        >
+                                          Limpar P2
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="rounded-xl border border-dashed border-white/10 bg-white/5 px-3 py-4 text-sm text-slate-400">
+                                        Clique em um card abaixo para escolher o Participante 2
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 flex flex-wrap items-center gap-3">
+                                  <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm">
+                                    <span className="text-slate-400">Prévia: </span>
+                                    <span className="font-bold text-white">
+                                      {draft.leftRosterId
+                                        ? (getManualParticipantByRosterId(g.id, draft.leftRosterId)?.display_name ?? "—")
+                                        : "—"}
+                                    </span>
+                                    <span className="mx-2 text-slate-400">+</span>
+                                    <span className="font-bold text-white">
+                                      {draft.rightRosterId
+                                        ? (getManualParticipantByRosterId(g.id, draft.rightRosterId)?.display_name ?? "—")
+                                        : "—"}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    className="btn-primary"
+                                    onClick={() => addManualPair(g)}
+                                    disabled={!draft.leftRosterId || !draft.rightRosterId}
+                                  >
+                                    Adicionar dupla
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                  <div className="text-sm font-semibold">Participantes disponíveis</div>
+                                  <div className="text-xs text-slate-400">
+                                    Clique no card inteiro para alternar:{" "}
+                                    <span className="font-semibold">P1 → P2 → limpar</span>
+                                  </div>
+                                </div>
+
+                                {manualRoster.length === 0 ? (
+                                  <div className="text-sm text-slate-400">Nenhum participante carregado ainda.</div>
+                                ) : (
+                                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                    {manualRoster.map((p) => {
+                                      const used = getUsedRosterIds(g.id).has(p.roster_id)
+                                      const isLeft = isManualPickLeft(g.id, p.roster_id)
+                                      const isRight = isManualPickRight(g.id, p.roster_id)
+
+                                      const baseCls = used
+                                        ? "border-white/5 bg-white/5 opacity-45 cursor-not-allowed"
+                                        : isLeft
+                                          ? "border-amber-400/60 bg-amber-400/10 cursor-pointer"
+                                          : isRight
+                                            ? "border-sky-400/60 bg-sky-400/10 cursor-pointer"
+                                            : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10 cursor-pointer"
+
+                                      return (
+                                        <div
+                                          key={p.roster_id}
+                                          className={`rounded-2xl border px-4 py-4 transition ${baseCls}`}
+                                          onClick={() => {
+                                            if (used) return
+                                            cycleManualPick(g.id, p.roster_id)
+                                          }}
+                                          title={
+                                            used
+                                              ? "Participante já está em dupla"
+                                              : "Clique para alternar entre P1, P2 e limpar"
+                                          }
+                                        >
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                              <div className="text-base font-bold text-white break-words">
+                                                {p.display_name}
+                                              </div>
+                                              <div className="mt-1 text-sm text-slate-300">
+                                                {kindBadge(p.kind)} • Categoria {p.category}
+                                              </div>
+                                            </div>
+
+                                            <div className="flex flex-col items-end gap-2 shrink-0">
+                                              {used ? (
+                                                <span className="rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[11px] font-semibold text-slate-300">
+                                                  Em dupla
+                                                </span>
+                                              ) : isLeft ? (
+                                                <span className="rounded-full border border-amber-400/30 bg-amber-400/15 px-2 py-1 text-[11px] font-semibold text-amber-200">
+                                                  P1
+                                                </span>
+                                              ) : isRight ? (
+                                                <span className="rounded-full border border-sky-400/30 bg-sky-400/15 px-2 py-1 text-[11px] font-semibold text-sky-200">
+                                                  P2
+                                                </span>
+                                              ) : (
+                                                <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[11px] font-semibold text-emerald-200">
+                                                  Disponível
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {!used && (
+                                            <div className="mt-3 text-xs text-slate-400">
+                                              {isLeft
+                                                ? "Clique novamente para mover para P2"
+                                                : isRight
+                                                  ? "Clique novamente para limpar seleção"
+                                                  : "Clique para selecionar"}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                <div className="text-sm font-semibold mb-2">Duplas montadas</div>
+
+                                {manualPairsForGroup.length === 0 ? (
+                                  <div className="text-sm text-slate-400">Nenhuma dupla montada ainda.</div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {manualPairsForGroup.map((p, idx) => (
+                                      <div key={p.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div>
+                                            <div className="text-xs text-slate-400">Dupla #{idx + 1}</div>
+                                            <div className="text-base font-bold text-white">
+                                              {p.left.display_name} <span className="text-slate-400">+</span> {p.right.display_name}
+                                            </div>
+                                            <div className="mt-1 text-sm text-slate-300">
+                                              {kindBadge(p.left.kind)} {p.left.category} • {kindBadge(p.right.kind)} {p.right.category}
+                                            </div>
+                                          </div>
+
+                                          <button
+                                            type="button"
+                                            className="btn-ghost"
+                                            onClick={() => removeManualPair(g.id, p.id)}
+                                          >
+                                            Remover
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <div className="mt-3 text-xs text-slate-400">
+                                  Monte ao menos <span className="font-semibold">2 duplas</span> para salvar/gerar jogos.
+                                </div>
+                              </div>
+
+                              <div className="text-[11px] text-slate-400">
+                                Esta versão salva as duplas manuais diretamente em{" "}
+                                <span className="font-mono">round_pairs</span> usando os participantes do{" "}
+                                <span className="font-mono">stage_roster</span>.
                               </div>
                             </div>
+                          )}
 
-                            <div className="text-[11px] text-slate-400">
-                              Esta versão salva as duplas manuais diretamente em{" "}
-                              <span className="font-mono">round_pairs</span> usando os participantes do{" "}
-                              <span className="font-mono">stage_roster</span>.
-                            </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              className="btn-ghost"
+                              onClick={() => clearGroupMatches(g)}
+                              disabled={loading || !roundId}
+                              title="Exclui todos os jogos do grupo"
+                            >
+                              Excluir jogos do grupo
+                            </button>
+
+                            <button
+                              className="btn-ghost"
+                              onClick={() => loadAuditForGroup(g.id)}
+                              disabled={loading || !roundId || auditLoading[g.id]}
+                              title="Mostra auditoria das partidas deste grupo"
+                            >
+                              {auditLoading[g.id] ? "Auditando..." : "Auditoria"}
+                            </button>
                           </div>
-                        )}
 
-                        {groupPairs[g.id] && groupPairs[g.id].length > 0 && (
-                          <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-                            <div className="text-sm font-semibold mb-2">
-                              {isFixedPairsRound && pairingMode === "manual" ? "Duplas salvas no grupo" : "Duplas sorteadas"}
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {groupPairs[g.id].map((p, idx) => {
-                                const left = p.a_name || (p.a_id ? p.a_id.slice(0, 8) : "—")
-                                const right = p.b_name || (p.b_id ? p.b_id.slice(0, 8) : "—")
-                                return (
-                                  <div key={p.pair_id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-                                    <div className="text-xs text-slate-400">Dupla #{idx + 1}</div>
-                                    <div className="font-semibold">
-                                      {left} <span className="text-slate-400">+</span> {right}
+                          {groupPairs[g.id] && groupPairs[g.id].length > 0 && (
+                            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                              <div className="text-sm font-semibold mb-2">
+                                {isFixedPairsRound && pairingMode === "manual"
+                                  ? "Duplas salvas no grupo"
+                                  : isAmericanoCatRound
+                                    ? "Duplas usadas na geração"
+                                    : "Duplas sorteadas"}
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {groupPairs[g.id].map((p, idx) => {
+                                  const left = p.a_name || (p.a_id ? p.a_id.slice(0, 8) : "—")
+                                  const right = p.b_name || (p.b_id ? p.b_id.slice(0, 8) : "—")
+                                  return (
+                                    <div key={p.pair_id} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                                      <div className="text-xs text-slate-400">Dupla #{idx + 1}</div>
+                                      <div className="font-semibold">
+                                        {left} <span className="text-slate-400">+</span> {right}
+                                      </div>
                                     </div>
+                                  )
+                                })}
+                              </div>
+                              <div className="mt-2 text-xs text-slate-400">
+                                {isAmericanoCatRound ? (
+                                  "No Americano CAT, essas duplas foram usadas para montar os jogos desta rodada."
+                                ) : isFixedPairsRound && pairingMode === "manual" ? (
+                                  "Se precisar ajustar, remonte as duplas manuais e clique em Salvar novamente."
+                                ) : (
+                                  <>
+                                    Se ficou errado, clique em <span className="font-semibold">Sortear</span> novamente para re-sortear
+                                    (as duplas antigas do grupo serão limpas).
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {audit && (
+                            <div className="mt-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 space-y-4">
+                              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                                <div>
+                                  <div className="text-sm font-extrabold">Auditoria da geração</div>
+                                  <div className="text-xs text-slate-300">
+                                    Total de jogos do grupo: <span className="font-semibold">{audit.totalMatches}</span>
                                   </div>
-                                )
-                              })}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="btn-ghost"
+                                  onClick={() => loadAuditForGroup(g.id)}
+                                  disabled={loading || !roundId || auditLoading[g.id]}
+                                >
+                                  {auditLoading[g.id] ? "Auditando..." : "Atualizar auditoria"}
+                                </button>
+                              </div>
+
+                              <div className="grid gap-4 xl:grid-cols-2">
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                  <div className="text-sm font-semibold mb-2">Quantas vezes cada atleta jogou / vai jogar</div>
+                                  <div className="space-y-1 text-sm">
+                                    {audit.gamesByAthlete.length === 0 ? (
+                                      <div className="text-slate-400">Sem dados.</div>
+                                    ) : (
+                                      audit.gamesByAthlete.map((row) => (
+                                        <div key={row.athlete} className="flex items-center justify-between gap-3">
+                                          <span>{row.athlete}</span>
+                                          <span className="font-bold">{row.games}</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                  <div className="text-sm font-semibold mb-2">Quantas vezes cada dupla apareceu</div>
+                                  <div className="space-y-1 text-sm max-h-72 overflow-auto pr-1">
+                                    {audit.pairsCount.length === 0 ? (
+                                      <div className="text-slate-400">Sem dados.</div>
+                                    ) : (
+                                      audit.pairsCount.map((row) => (
+                                        <div key={row.pair} className="flex items-center justify-between gap-3">
+                                          <span>{row.pair}</span>
+                                          <span className="font-bold">{row.count}</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3 xl:col-span-2">
+                                  <div className="text-sm font-semibold mb-2">Quantas vezes cada atleta enfrentou cada adversário</div>
+                                  <div className="grid gap-1 md:grid-cols-2 xl:grid-cols-3 text-sm max-h-80 overflow-auto pr-1">
+                                    {audit.againstCount.length === 0 ? (
+                                      <div className="text-slate-400">Sem dados.</div>
+                                    ) : (
+                                      audit.againstCount.map((row) => (
+                                        <div
+                                          key={`${row.athlete}|||${row.opponent}`}
+                                          className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2"
+                                        >
+                                          <span>
+                                            <span className="font-medium">{row.athlete}</span>
+                                            <span className="text-slate-400"> vs </span>
+                                            <span>{row.opponent}</span>
+                                          </span>
+                                          <span className="font-bold">{row.count}</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3 xl:col-span-2">
+                                  <div className="text-sm font-semibold mb-2">Quem teve mais sequência de slots</div>
+                                  <div className="space-y-2 text-sm">
+                                    {audit.slotSequences.length === 0 ? (
+                                      <div className="text-slate-400">Sem dados.</div>
+                                    ) : (
+                                      audit.slotSequences.map((row) => (
+                                        <div
+                                          key={row.athlete}
+                                          className="rounded-lg border border-white/5 bg-white/5 px-3 py-2"
+                                        >
+                                          <div className="flex items-center justify-between gap-3">
+                                            <span className="font-medium">{row.athlete}</span>
+                                            <span className="font-bold">Maior sequência: {row.longestRun}</span>
+                                          </div>
+                                          <div className="mt-1 text-xs text-slate-400">
+                                            Slots: {row.slots.join(", ")}
+                                          </div>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="mt-2 text-xs text-slate-400">
-                              {isFixedPairsRound && pairingMode === "manual" ? (
-                                "Se precisar ajustar, remonte as duplas manuais e clique em Salvar novamente."
-                              ) : (
-                                <>
-                                  Se ficou errado, clique em <span className="font-semibold">Sortear</span> novamente para re-sortear
-                                  (as duplas antigas do grupo serão limpas).
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === "online" && (
-        <div className="card space-y-4">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-            <div>
-              <div className="text-lg font-extrabold">Lançamento de Resultados (On-line)</div>
-              <div className="text-sm text-slate-300">
-                Informe o placar e clique em <span className="font-semibold">Salvar & Finalizar</span>. Se precisar
-                corrigir, edite e salve novamente.
-              </div>
-              <div className="mt-1 text-xs text-slate-400">
-                Esta rodada é até <span className="font-semibold">{roundScoreTarget}</span>.
-              </div>
-            </div>
-
-            {isStageFinished && (
-              <div className="mb-3 rounded-2xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
-                <b>Etapa finalizada.</b> Placar e status dos jogos estão bloqueados.
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-end gap-2">
-              <div>
-                <div className="text-xs text-slate-300 mb-1">Filtrar quadra</div>
-                <input
-                  className="w-[140px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-                  value={courtFilter ?? ""}
-                  onChange={(e) => setCourtFilter(e.target.value ? Number(e.target.value) : null)}
-                  inputMode="numeric"
-                  placeholder="ex: 1"
-                />
-              </div>
-
-              <button className="btn-primary" onClick={() => loadMatches(roundId)} disabled={matchesLoading || !roundId}>
-                {matchesLoading ? "Atualizando..." : "Atualizar jogos"}
-              </button>
-
-              <button
-                type="button"
-                className="btn no-print"
-                onClick={handlePrint}
-                disabled={matchesLoading || matches.length === 0}
-                title="Imprimir folha para anotar na caneta"
-              >
-                🖨️ PDF oficial
-              </button>
-
-              <span className="no-print" title={resequenceTooltip}>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={reorderMatches}
-                  disabled={!roundId || matchesLoading || reordering || resequenceLocked}
-                >
-                  {reordering ? "Reordenando..." : "Reordenar jogos"}
-                </button>
-              </span>
-            </div>
-          </div>
-
-          {pendingReports.length > 0 && (
-            <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-lg font-extrabold">Placar pendente de confirmação</div>
-                  <div className="text-sm text-slate-300">
-                    Atletas podem lançar o placar. Use <b>Confirmar</b> para aplicar no jogo (útil quando há convidados).
-                  </div>
-                </div>
-                <div className="text-xs text-slate-400">
-                  {pendingLoading ? "Atualizando..." : `${pendingReports.length} pendente(s)`}
-                </div>
-              </div>
-
-              <div className="mt-3 space-y-2">
-                {pendingReports.map((r) => {
-                  const s: any = r.score ?? {}
-                  const t1 =
-                    typeof s?.team1 === "number" ? s.team1 : typeof s?.games_team1 === "number" ? s.games_team1 : ""
-                  const t2 =
-                    typeof s?.team2 === "number" ? s.team2 : typeof s?.games_team2 === "number" ? s.games_team2 : ""
-                  const placar = t1 !== "" && t2 !== "" ? `${t1} x ${t2}` : "—"
-                  const title = `${r.team1_label ?? "Time 1"} x ${r.team2_label ?? "Time 2"}`
-
-                  return (
-                    <div key={r.report_id} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                        <div>
-                          <div className="text-sm text-slate-400">
-                            Quadra {r.court_no ?? "—"} • Slot {r.slot_no ?? "—"} •{" "}
-                            {new Date(r.created_at ?? Date.now()).toLocaleString("pt-BR")}
-                          </div>
-                          <div className="mt-1 font-extrabold">{title}</div>
-                          <div className="mt-1 text-sm text-slate-200">
-                            <span className="text-slate-400">Reportado por:</span>{" "}
-                            {r.reported_name ?? r.reported_by.slice(0, 8)} •{" "}
-                            <span className="text-slate-400">Placar:</span>{" "}
-                            <span className="font-extrabold">{placar}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="btn-primary"
-                            onClick={() => confirmPendingReport(r.report_id)}
-                            disabled={pendingLoading || isStageFinished}
-                            title={isStageFinished ? "Etapa finalizada (bloqueado)" : "Aplicar placar e finalizar"}
-                          >
-                            Confirmar
-                          </button>
+                          )}
                         </div>
                       </div>
                     </div>
                   )
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          <div className="print-area print-only">
-            <div className="print-sheet">
-              <div className="print-header">
-                <div>
-                  <div className="print-title">LPI35++ — Ficha Oficial de Jogos</div>
+        {tab === "online" && (
+          <div className="card space-y-4">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+              <div>
+                <div className="text-lg font-extrabold">Lançamento de Resultados (On-line)</div>
+                <div className="text-sm text-slate-300">
+                  Informe o placar e clique em <span className="font-semibold">Salvar & Finalizar</span>. Se precisar
+                  corrigir, edite e salve novamente.
                 </div>
-                <div className="print-meta">
-                  <div>
-                    <strong>Temporada:</strong> {selectedSeason?.name ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Etapa:</strong> {selectedStage?.name ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Clube:</strong> {club?.name ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Gerado:</strong> {new Date().toLocaleString("pt-BR")}
-                  </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  Esta rodada é até <span className="font-semibold">{roundScoreTarget}</span>.
                 </div>
               </div>
 
-              {printCourtKeys.length === 0 ? (
-                <div className="print-muted">Nenhum jogo para imprimir.</div>
-              ) : (
-                printCourtKeys.map((courtNo, idx) => (
-                  <div
-                    key={courtNo}
-                    className={"print-court " + (idx < printCourtKeys.length - 1 ? "print-pagebreak" : "")}
+              {isStageFinished && (
+                <div className="mb-3 rounded-2xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
+                  <b>Etapa finalizada.</b> Placar e status dos jogos estão bloqueados.
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <div className="text-xs text-slate-300 mb-1">Filtrar quadra</div>
+                  <input
+                    className="w-[140px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                    value={courtFilter ?? ""}
+                    onChange={(e) => setCourtFilter(e.target.value ? Number(e.target.value) : null)}
+                    inputMode="numeric"
+                    placeholder="ex: 1"
+                  />
+                </div>
+
+                <button className="btn-primary" onClick={() => loadMatches(roundId)} disabled={matchesLoading || !roundId}>
+                  {matchesLoading ? "Atualizando..." : "Atualizar jogos"}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn no-print"
+                  onClick={handlePrint}
+                  disabled={matchesLoading || matches.length === 0}
+                  title="Imprimir folha para anotar na caneta"
+                >
+                  🖨️ PDF oficial
+                </button>
+
+                <span className="no-print" title={resequenceTooltip}>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={reorderMatches}
+                    disabled={!roundId || matchesLoading || reordering || resequenceLocked}
                   >
-                    <div className="print-court-head">
-                      <h2>
-                        Quadra {courtNo}
-                        {printCourtCatsMap[courtNo] ? ` — ${printCourtCatsMap[courtNo]}` : ""}
-                      </h2>
+                    {reordering ? "Reordenando..." : "Reordenar jogos"}
+                  </button>
+                </span>
+              </div>
+            </div>
+
+            {pendingReports.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-extrabold">Placar pendente de confirmação</div>
+                    <div className="text-sm text-slate-300">
+                      Atletas podem lançar o placar. Use <b>Confirmar</b> para aplicar no jogo (útil quando há convidados).
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {pendingLoading ? "Atualizando..." : `${pendingReports.length} pendente(s)`}
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {pendingReports.map((r) => {
+                    const s: any = r.score ?? {}
+                    const t1 =
+                      typeof s?.team1 === "number" ? s.team1 : typeof s?.games_team1 === "number" ? s.games_team1 : ""
+                    const t2 =
+                      typeof s?.team2 === "number" ? s.team2 : typeof s?.games_team2 === "number" ? s.games_team2 : ""
+                    const placar = t1 !== "" && t2 !== "" ? `${t1} x ${t2}` : "—"
+                    const title = `${r.team1_label ?? "Time 1"} x ${r.team2_label ?? "Time 2"}`
+
+                    return (
+                      <div key={r.report_id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                          <div>
+                            <div className="text-sm text-slate-400">
+                              Quadra {r.court_no ?? "—"} • Slot {r.slot_no ?? "—"} •{" "}
+                              {new Date(r.created_at ?? Date.now()).toLocaleString("pt-BR")}
+                            </div>
+                            <div className="mt-1 font-extrabold">{title}</div>
+                            <div className="mt-1 text-sm text-slate-200">
+                              <span className="text-slate-400">Reportado por:</span>{" "}
+                              {r.reported_name ?? r.reported_by.slice(0, 8)} •{" "}
+                              <span className="text-slate-400">Placar:</span>{" "}
+                              <span className="font-extrabold">{placar}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="btn-primary"
+                              onClick={() => confirmPendingReport(r.report_id)}
+                              disabled={pendingLoading || isStageFinished}
+                              title={isStageFinished ? "Etapa finalizada (bloqueado)" : "Aplicar placar e finalizar"}
+                            >
+                              Confirmar
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {matches.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
+                Nenhum jogo encontrado para esta rodada.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {courtKeys.map((courtNo) => (
+                  <div key={courtNo} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-lg font-extrabold">Quadra {courtNo}</div>
+                      <div className="text-xs text-slate-400">
+                        {matchesByCourt[String(courtNo)]?.length ?? 0} jogo(s)
+                      </div>
                     </div>
 
-                    <table className="print-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: 54, textAlign: "center" }}>Slot</th>
-                          <th>Time 1</th>
-                          <th>Time 2</th>
-                          <th style={{ width: 200, textAlign: "center" }}>Placar</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(printMatchesByCourt[String(courtNo)] ?? []).map((m) => (
-                          <tr key={m.match_id}>
-                            <td style={{ textAlign: "center" }}>{m.slot_no ?? ""}</td>
-                            <td>{m.team1 ?? "—"}</td>
-                            <td>{m.team2 ?? "—"}</td>
-                            <td style={{ textAlign: "center" }}>
-                              <span className="font-extrabold">x</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="mt-3 space-y-3">
+                      {(matchesByCourt[String(courtNo)] || []).map((m) => {
+                        const draft = scoreDraft[m.match_id] || { s1: "", s2: "" }
+                        const isPlayed = (m.status || "").toLowerCase() === "played"
+
+                        const n1 = draft.s1 === "" ? NaN : Number(draft.s1)
+                        const n2 = draft.s2 === "" ? NaN : Number(draft.s2)
+                        const hasBoth = draft.s1 !== "" && draft.s2 !== ""
+                        const localScoreValid =
+                          hasBoth &&
+                          Number.isFinite(n1) &&
+                          Number.isFinite(n2) &&
+                          isValidRoundScore(n1, n2, Number(roundScoreTarget ?? 6))
+
+                        const helperMsg = !hasBoth
+                          ? `Selecione o placar. Um time deve fechar em ${roundScoreTarget}.`
+                          : localScoreValid
+                            ? "Placar válido."
+                            : `Placar inválido. Um time deve fechar em ${roundScoreTarget} e o outro deve ficar abaixo de ${roundScoreTarget}.`
+
+                        return (
+                          <div key={m.match_id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                              <div>
+                                <div className="text-sm text-slate-400">
+                                  Slot {m.slot_no ?? "-"} • Status:{" "}
+                                  <span className="font-semibold">{m.status ?? "-"}</span>
+                                </div>
+                                <div className="mt-1 text-base font-extrabold">
+                                  {m.team1 ?? "Time 1"} <span className="text-slate-400">x</span> {m.team2 ?? "Time 2"}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-400">
+                                  Grupo: <span className="font-semibold">{matchGroupLabelByMatchId[m.match_id] ?? "—"}</span>
+                                </div>
+                                {isPlayed && (
+                                  <div className="mt-1 text-xs text-emerald-200">(Pode editar o placar e salvar novamente)</div>
+                                )}
+                                <div className="mt-1 text-xs text-slate-400">
+                                  Jogo até <span className="font-semibold">{roundScoreTarget}</span>
+                                </div>
+                                <div
+                                  className={`mt-1 text-xs ${
+                                    localScoreValid ? "text-emerald-300" : "text-red-300"
+                                  }`}
+                                >
+                                  {helperMsg}
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-end gap-2">
+                                <div>
+                                  <div className="text-xs text-slate-300 mb-1">Time 1</div>
+                                  <select
+                                    className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                                    value={draft.s1}
+                                    onChange={(e) =>
+                                      setScoreDraft((prev) => ({
+                                        ...prev,
+                                        [m.match_id]: { s1: e.target.value, s2: draft.s2 },
+                                      }))
+                                    }
+                                    disabled={matchesLoading || isStageFinished}
+                                  >
+                                    <option value="">-</option>
+                                    {scoreOptions.map((opt) => (
+                                      <option key={`t1-${m.match_id}-${opt}`} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <div className="text-xs text-slate-300 mb-1">Time 2</div>
+                                  <select
+                                    className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                                    value={draft.s2}
+                                    onChange={(e) =>
+                                      setScoreDraft((prev) => ({
+                                        ...prev,
+                                        [m.match_id]: { s1: draft.s1, s2: e.target.value },
+                                      }))
+                                    }
+                                    disabled={matchesLoading || isStageFinished}
+                                  >
+                                    <option value="">-</option>
+                                    {scoreOptions.map((opt) => (
+                                      <option key={`t2-${m.match_id}-${opt}`} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <button
+                                  className="btn-primary"
+                                  onClick={() => saveMatchScore(m.match_id)}
+                                  disabled={matchesLoading || isStageFinished || !localScoreValid}
+                                  title={
+                                    localScoreValid
+                                      ? "Salvar resultado"
+                                      : `Placar inválido. Um time deve fechar em ${roundScoreTarget}.`
+                                  }
+                                >
+                                  {isPlayed ? "Salvar (editar)" : "Salvar & Finalizar"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                ))
-              )}
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="print-area print-only">
+        <div className="print-sheet">
+          <div className="print-header">
+            <div>
+              <div className="print-title">LPI35++ — Ficha Oficial de Jogos</div>
+            </div>
+            <div className="print-meta">
+              <div>
+                <strong>Temporada:</strong> {selectedSeason?.name ?? "—"}
+              </div>
+              <div>
+                <strong>Etapa:</strong> {selectedStage?.name ?? "—"}
+              </div>
+              <div>
+                <strong>Clube:</strong> {club?.name ?? "—"}
+              </div>
+              <div>
+                <strong>Gerado:</strong> {new Date().toLocaleString("pt-BR")}
+              </div>
             </div>
           </div>
 
-          {matches.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
-              Nenhum jogo encontrado para esta rodada.
-            </div>
+          {printCourtKeys.length === 0 ? (
+            <div className="print-muted">Nenhum jogo para imprimir.</div>
           ) : (
-            <div className="space-y-4">
-              {courtKeys.map((courtNo) => (
-                <div key={courtNo} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-lg font-extrabold">Quadra {courtNo}</div>
-                    <div className="text-xs text-slate-400">
-                      {matchesByCourt[String(courtNo)]?.length ?? 0} jogo(s)
-                    </div>
-                  </div>
-
-                  <div className="mt-3 space-y-3">
-                    {(matchesByCourt[String(courtNo)] || []).map((m) => {
-                      const draft = scoreDraft[m.match_id] || { s1: "", s2: "" }
-                      const isPlayed = (m.status || "").toLowerCase() === "played"
-
-                      const n1 = draft.s1 === "" ? NaN : Number(draft.s1)
-                      const n2 = draft.s2 === "" ? NaN : Number(draft.s2)
-                      const hasBoth = draft.s1 !== "" && draft.s2 !== ""
-                      const localScoreValid =
-                        hasBoth &&
-                        Number.isFinite(n1) &&
-                        Number.isFinite(n2) &&
-                        isValidRoundScore(n1, n2, Number(roundScoreTarget ?? 6))
-
-                      const helperMsg = !hasBoth
-                        ? `Selecione o placar. Um time deve fechar em ${roundScoreTarget}.`
-                        : localScoreValid
-                          ? "Placar válido."
-                          : `Placar inválido. Um time deve fechar em ${roundScoreTarget} e o outro deve ficar abaixo de ${roundScoreTarget}.`
-
-                      return (
-                        <div key={m.match_id} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                            <div>
-                              <div className="text-sm text-slate-400">
-                                Slot {m.slot_no ?? "-"} • Status:{" "}
-                                <span className="font-semibold">{m.status ?? "-"}</span>
-                              </div>
-                              <div className="mt-1 text-base font-extrabold">
-                                {m.team1 ?? "Time 1"} <span className="text-slate-400">x</span> {m.team2 ?? "Time 2"}
-                              </div>
-                              {isPlayed && (
-                                <div className="mt-1 text-xs text-emerald-200">(Pode editar o placar e salvar novamente)</div>
-                              )}
-                              <div className="mt-1 text-xs text-slate-400">
-                                Jogo até <span className="font-semibold">{roundScoreTarget}</span>
-                              </div>
-                              <div
-                                className={`mt-1 text-xs ${
-                                  localScoreValid ? "text-emerald-300" : "text-red-300"
-                                }`}
-                              >
-                                {helperMsg}
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-end gap-2">
-                              <div>
-                                <div className="text-xs text-slate-300 mb-1">Time 1</div>
-                                <select
-                                  className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-                                  value={draft.s1}
-                                  onChange={(e) =>
-                                    setScoreDraft((prev) => ({
-                                      ...prev,
-                                      [m.match_id]: { s1: e.target.value, s2: draft.s2 },
-                                    }))
-                                  }
-                                  disabled={matchesLoading || isStageFinished}
-                                >
-                                  <option value="">-</option>
-                                  {scoreOptions.map((opt) => (
-                                    <option key={`t1-${m.match_id}-${opt}`} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <div>
-                                <div className="text-xs text-slate-300 mb-1">Time 2</div>
-                                <select
-                                  className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
-                                  value={draft.s2}
-                                  onChange={(e) =>
-                                    setScoreDraft((prev) => ({
-                                      ...prev,
-                                      [m.match_id]: { s1: draft.s1, s2: e.target.value },
-                                    }))
-                                  }
-                                  disabled={matchesLoading || isStageFinished}
-                                >
-                                  <option value="">-</option>
-                                  {scoreOptions.map((opt) => (
-                                    <option key={`t2-${m.match_id}-${opt}`} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <button
-                                className="btn-primary"
-                                onClick={() => saveMatchScore(m.match_id)}
-                                disabled={matchesLoading || isStageFinished || !localScoreValid}
-                                title={
-                                  localScoreValid
-                                    ? "Salvar resultado"
-                                    : `Placar inválido. Um time deve fechar em ${roundScoreTarget}.`
-                                }
-                              >
-                                {isPlayed ? "Salvar (editar)" : "Salvar & Finalizar"}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+            printCourtKeys.map((courtNo) => (
+              <div key={courtNo} className="print-court">
+                <div className="print-court-head">
+                  <h2>
+                    Quadra {courtNo}
+                    {printCourtCatsMap[courtNo] ? ` — ${printCourtCatsMap[courtNo]}` : ""}
+                  </h2>
                 </div>
-              ))}
-            </div>
+
+                <table className="print-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 54, textAlign: "center" }}>Slot</th>
+                      <th style={{ width: 72, textAlign: "center" }}>Grupo</th>
+                      <th>Time 1</th>
+                      <th>Time 2</th>
+                      <th style={{ width: 200, textAlign: "center" }}>Placar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(printMatchesByCourt[String(courtNo)] ?? []).map((m) => (
+                      <tr key={m.match_id}>
+                        <td style={{ textAlign: "center" }}>{m.slot_no ?? ""}</td>
+                        <td className="print-group-cell">{matchGroupLabelByMatchId[m.match_id] ?? "—"}</td>
+                        <td>{m.team1 ?? "—"}</td>
+                        <td>{m.team2 ?? "—"}</td>
+                        <td style={{ textAlign: "center" }}>
+                          <span className="font-extrabold">x</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))
           )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
