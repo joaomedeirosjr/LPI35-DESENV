@@ -28,11 +28,13 @@ type GroupRow = {
   sort_order: number | null
   court_from: number | null
   court_to: number | null
+  score_target?: number | null
 }
 
 type MatchRow = {
   match_id: string
   group_id?: string | null
+  group_score_target?: number | null
   slot_no: number | null
   court_no: number | null
   status: string | null
@@ -213,6 +215,10 @@ function isValidRoundScore(s1: number, s2: number, target: number) {
   return (s1 === target && s2 < target) || (s2 === target && s1 < target)
 }
 
+function isValidAmericanoCatScore(s1: number, s2: number, target: number) {
+  return Number.isFinite(s1) && Number.isFinite(s2) && s1 >= 0 && s2 >= 0 && s1 + s2 === target
+}
+
 export default function AdminRounds() {
   const [tab, setTab] = useState<TabKey>("config")
 
@@ -242,6 +248,7 @@ export default function AdminRounds() {
 
   const [newCatA, setNewCatA] = useState<CatKey>("A")
   const [newCatB, setNewCatB] = useState<CatKey>("B")
+  const [newGroupScoreTarget, setNewGroupScoreTarget] = useState<number | null>(null)
 
   const [matches, setMatches] = useState<MatchRow[]>([])
   const [matchesLoading, setMatchesLoading] = useState(false)
@@ -285,11 +292,6 @@ export default function AdminRounds() {
     const r = rounds.find((x) => x.id === roundId)
     return r?.score_target ?? 6
   }, [rounds, roundId])
-
-  const scoreOptions = useMemo(() => {
-    const target = Number(roundScoreTarget ?? 6)
-    return Array.from({ length: target + 1 }, (_, i) => String(i))
-  }, [roundScoreTarget])
 
   const courtsLimit = useMemo(() => {
     if (courtsAvailable && courtsAvailable > 0) return courtsAvailable
@@ -1551,7 +1553,7 @@ export default function AdminRounds() {
 
     const { data, error } = await supabase
       .from("round_groups")
-      .select("id,round_id,label,cat_a,cat_b,sort_order,court_from,court_to")
+      .select("id,round_id,label,cat_a,cat_b,sort_order,court_from,court_to,score_target")
       .eq("round_id", pRoundId)
       .order("sort_order", { ascending: true })
 
@@ -1808,6 +1810,10 @@ export default function AdminRounds() {
         setErr("No modo Americano CAT, as categorias devem ser iguais.")
         return
       }
+      if (!newGroupScoreTarget || newGroupScoreTarget <= 0) {
+        setErr("Informe o placar alvo do grupo para o Americano CAT.")
+        return
+      }
     } else {
       if (newCatA === newCatB) {
         setErr("Categorias não podem ser iguais para este modo.")
@@ -1823,12 +1829,14 @@ export default function AdminRounds() {
         p_cat_b: newCatB,
         p_label: newCatA + "+" + newCatB,
         p_sort_order: null,
+        p_score_target: roundModeNormalized === "americanocat" ? newGroupScoreTarget : null,
       })
 
       if (error) throw error
       if (!data) throw new Error("RPC não retornou id")
 
       setMsg("Grupo criado: " + newCatA + "+" + newCatB)
+      if (roundModeNormalized === "americanocat") setNewGroupScoreTarget(null)
       await loadGroups(roundId)
     } catch (e: any) {
       setErr(e?.message || String(e))
@@ -1889,11 +1897,22 @@ export default function AdminRounds() {
       return
     }
 
-    const target = Number(roundScoreTarget ?? 6)
-    const validScore = isValidRoundScore(n1, n2, target)
+    const matchRow = matches.find((m) => m.match_id === matchId) ?? null
+    const target =
+      roundModeNormalized === "americanocat"
+        ? Number(matchRow?.group_score_target ?? 0)
+        : Number(roundScoreTarget ?? 6)
+
+    const validScore =
+      roundModeNormalized === "americanocat"
+        ? isValidAmericanoCatScore(n1, n2, target)
+        : isValidRoundScore(n1, n2, target)
 
     if (!validScore) {
-      const m = `Placar inválido para esta rodada. Um time deve fechar em ${target} e o outro deve ficar abaixo de ${target}.`
+      const m =
+        roundModeNormalized === "americanocat"
+          ? `Placar inválido para este grupo. A soma dos dois times deve dar ${target}.`
+          : `Placar inválido para esta rodada. Um time deve fechar em ${target} e o outro deve ficar abaixo de ${target}.`
       setErr(m)
       alert(m)
       return
@@ -2241,6 +2260,20 @@ export default function AdminRounds() {
                     <CatSelect value={newCatB} onChange={setNewCatB} disabled={loading || !roundId} />
                   </div>
 
+                  {roundModeNormalized === "americanocat" && (
+                    <div>
+                      <div className="text-xs text-slate-300 mb-1">Placar alvo do grupo</div>
+                      <input
+                        className="w-[150px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                        value={newGroupScoreTarget ?? ""}
+                        onChange={(e) => setNewGroupScoreTarget(e.target.value ? Number(e.target.value) : null)}
+                        inputMode="numeric"
+                        placeholder="ex: 24"
+                        disabled={loading || !roundId}
+                      />
+                    </div>
+                  )}
+
                   <button className="btn-primary" onClick={addGroup} disabled={loading || !roundId}>
                     Adicionar
                   </button>
@@ -2261,6 +2294,9 @@ export default function AdminRounds() {
                         <div className="font-extrabold">{g.label ?? (g.cat_a ?? "?") + "+" + (g.cat_b ?? "?")}</div>
                         <div className="text-xs text-slate-400">
                           sort_order: {g.sort_order ?? "-"} | group_id: <span className="font-mono">{g.id.slice(0, 8)}</span>
+                          {roundModeNormalized === "americanocat" && g.score_target != null ? (
+                            <> | alvo do grupo: <span className="font-semibold">{g.score_target}</span></>
+                          ) : null}
                         </div>
                       </div>
 
@@ -2384,6 +2420,9 @@ export default function AdminRounds() {
                               <div className="mt-1 text-xs text-slate-400">
                                 mínimo para gerar: <span className="font-semibold">4</span> | faltam:{" "}
                                 <span className="font-semibold">{needA}</span>
+                              </div>
+                              <div className="mt-1 text-xs text-slate-400">
+                                alvo do grupo (soma dos dois times): <span className="font-semibold">{g.score_target ?? "-"}</span>
                               </div>
                               <div className="mt-1 text-xs text-slate-400">
                                 pares já usados na rodada para este grupo: <span className="font-semibold">{pairs}</span>
@@ -3096,7 +3135,11 @@ export default function AdminRounds() {
                   corrigir, edite e salve novamente.
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                  Esta rodada é até <span className="font-semibold">{roundScoreTarget}</span>.
+                  {roundModeNormalized === "americanocat" ? (
+                    <>No Americano CAT, a soma dos dois times deve bater o alvo do grupo.</>
+                  ) : (
+                    <>Esta rodada é até <span className="font-semibold">{roundScoreTarget}</span>.</>
+                  )}
                 </div>
               </div>
 
@@ -3224,20 +3267,32 @@ export default function AdminRounds() {
                         const draft = scoreDraft[m.match_id] || { s1: "", s2: "" }
                         const isPlayed = (m.status || "").toLowerCase() === "played"
 
+                        const targetForMatch =
+                          roundModeNormalized === "americanocat"
+                            ? Number(m.group_score_target ?? 0)
+                            : Number(roundScoreTarget ?? 6)
+
                         const n1 = draft.s1 === "" ? NaN : Number(draft.s1)
                         const n2 = draft.s2 === "" ? NaN : Number(draft.s2)
                         const hasBoth = draft.s1 !== "" && draft.s2 !== ""
+
                         const localScoreValid =
                           hasBoth &&
                           Number.isFinite(n1) &&
                           Number.isFinite(n2) &&
-                          isValidRoundScore(n1, n2, Number(roundScoreTarget ?? 6))
+                          (roundModeNormalized === "americanocat"
+                            ? isValidAmericanoCatScore(n1, n2, targetForMatch)
+                            : isValidRoundScore(n1, n2, targetForMatch))
 
                         const helperMsg = !hasBoth
-                          ? `Selecione o placar. Um time deve fechar em ${roundScoreTarget}.`
+                          ? roundModeNormalized === "americanocat"
+                            ? `Digite o placar. A soma dos dois times deve dar ${targetForMatch}.`
+                            : `Digite o placar. Um time deve fechar em ${targetForMatch}.`
                           : localScoreValid
                             ? "Placar válido."
-                            : `Placar inválido. Um time deve fechar em ${roundScoreTarget} e o outro deve ficar abaixo de ${roundScoreTarget}.`
+                            : roundModeNormalized === "americanocat"
+                              ? `Placar inválido. A soma dos dois times deve dar ${targetForMatch}.`
+                              : `Placar inválido. Um time deve fechar em ${targetForMatch} e o outro deve ficar abaixo de ${targetForMatch}.`
 
                         return (
                           <div key={m.match_id} className="rounded-xl border border-white/10 bg-white/5 p-4">
@@ -3257,7 +3312,11 @@ export default function AdminRounds() {
                                   <div className="mt-1 text-xs text-emerald-200">(Pode editar o placar e salvar novamente)</div>
                                 )}
                                 <div className="mt-1 text-xs text-slate-400">
-                                  Jogo até <span className="font-semibold">{roundScoreTarget}</span>
+                                  {roundModeNormalized === "americanocat" ? (
+                                    <>Soma alvo do grupo: <span className="font-semibold">{targetForMatch}</span></>
+                                  ) : (
+                                    <>Jogo até <span className="font-semibold">{roundScoreTarget}</span></>
+                                  )}
                                 </div>
                                 <div
                                   className={`mt-1 text-xs ${
@@ -3271,46 +3330,48 @@ export default function AdminRounds() {
                               <div className="flex flex-wrap items-end gap-2">
                                 <div>
                                   <div className="text-xs text-slate-300 mb-1">Time 1</div>
-                                  <select
-                                    className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={targetForMatch > 0 ? targetForMatch : undefined}
+                                    step={1}
+                                    inputMode="numeric"
+                                    className="w-[110px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
                                     value={draft.s1}
-                                    onChange={(e) =>
+                                    onChange={(e) => {
+                                      const raw = e.target.value.replace(/[^\d]/g, "")
+                                      const nextValue = raw === "" ? "" : String(Math.min(Number(raw), Math.max(targetForMatch, 0)))
                                       setScoreDraft((prev) => ({
                                         ...prev,
-                                        [m.match_id]: { s1: e.target.value, s2: draft.s2 },
+                                        [m.match_id]: { s1: nextValue, s2: draft.s2 },
                                       }))
-                                    }
+                                    }}
                                     disabled={matchesLoading || isStageFinished}
-                                  >
-                                    <option value="">-</option>
-                                    {scoreOptions.map((opt) => (
-                                      <option key={`t1-${m.match_id}-${opt}`} value={opt}>
-                                        {opt}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    placeholder="0"
+                                  />
                                 </div>
 
                                 <div>
                                   <div className="text-xs text-slate-300 mb-1">Time 2</div>
-                                  <select
-                                    className="w-[90px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={targetForMatch > 0 ? targetForMatch : undefined}
+                                    step={1}
+                                    inputMode="numeric"
+                                    className="w-[110px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/20"
                                     value={draft.s2}
-                                    onChange={(e) =>
+                                    onChange={(e) => {
+                                      const raw = e.target.value.replace(/[^\d]/g, "")
+                                      const nextValue = raw === "" ? "" : String(Math.min(Number(raw), Math.max(targetForMatch, 0)))
                                       setScoreDraft((prev) => ({
                                         ...prev,
-                                        [m.match_id]: { s1: draft.s1, s2: e.target.value },
+                                        [m.match_id]: { s1: draft.s1, s2: nextValue },
                                       }))
-                                    }
+                                    }}
                                     disabled={matchesLoading || isStageFinished}
-                                  >
-                                    <option value="">-</option>
-                                    {scoreOptions.map((opt) => (
-                                      <option key={`t2-${m.match_id}-${opt}`} value={opt}>
-                                        {opt}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    placeholder="0"
+                                  />
                                 </div>
 
                                 <button
@@ -3320,7 +3381,9 @@ export default function AdminRounds() {
                                   title={
                                     localScoreValid
                                       ? "Salvar resultado"
-                                      : `Placar inválido. Um time deve fechar em ${roundScoreTarget}.`
+                                      : roundModeNormalized === "americanocat"
+                                        ? `Placar inválido. A soma dos dois times deve dar ${targetForMatch}.`
+                                        : `Placar inválido. Um time deve fechar em ${roundScoreTarget}.`
                                   }
                                 >
                                   {isPlayed ? "Salvar (editar)" : "Salvar & Finalizar"}

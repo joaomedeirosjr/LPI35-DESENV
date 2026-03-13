@@ -64,6 +64,10 @@ function isValidRoundScore(s1: number, s2: number, target: number) {
   return (s1 === target && s2 < target) || (s2 === target && s1 < target)
 }
 
+function isValidAmericanoCatScore(s1: number, s2: number, target: number) {
+  return Number.isFinite(s1) && Number.isFinite(s2) && s1 >= 0 && s2 >= 0 && s1 + s2 === target
+}
+
 export default function AthleteRounds() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -100,12 +104,10 @@ export default function AthleteRounds() {
 
   const editingScoreTarget = useMemo(() => {
     const v = Number(editing?.score_target ?? 6)
-    return v === 4 || v === 5 || v === 6 ? v : 6
+    return Number.isFinite(v) && v > 0 ? v : 6
   }, [editing])
 
-  const editingScoreOptions = useMemo(() => {
-    return Array.from({ length: editingScoreTarget + 1 }, (_, i) => String(i))
-  }, [editingScoreTarget])
+  const editingUsesSumRule = useMemo(() => editingScoreTarget > 6, [editingScoreTarget])
 
   const editingScoreValid = useMemo(() => {
     if (!editing) return false
@@ -115,18 +117,24 @@ export default function AthleteRounds() {
     const n2 = Number(t2)
     if (!Number.isFinite(n1) || !Number.isFinite(n2)) return false
 
-    return isValidRoundScore(n1, n2, editingScoreTarget)
-  }, [editing, t1, t2, editingScoreTarget])
+    return editingUsesSumRule
+      ? isValidAmericanoCatScore(n1, n2, editingScoreTarget)
+      : isValidRoundScore(n1, n2, editingScoreTarget)
+  }, [editing, t1, t2, editingScoreTarget, editingUsesSumRule])
 
   const editingHelperText = useMemo(() => {
     if (!editing) return ""
     if (t1 === "" || t2 === "") {
-      return `Selecione o placar. Um time deve fechar em ${editingScoreTarget}.`
+      return editingUsesSumRule
+        ? `Selecione o placar. A soma dos dois times deve dar ${editingScoreTarget}.`
+        : `Selecione o placar. Um time deve fechar em ${editingScoreTarget}.`
     }
     return editingScoreValid
       ? "Placar válido."
-      : `Placar inválido. Um time deve fechar em ${editingScoreTarget} e o outro deve ficar abaixo de ${editingScoreTarget}.`
-  }, [editing, t1, t2, editingScoreTarget, editingScoreValid])
+      : editingUsesSumRule
+        ? `Placar inválido. A soma dos dois times deve dar ${editingScoreTarget}.`
+        : `Placar inválido. Um time deve fechar em ${editingScoreTarget} e o outro deve ficar abaixo de ${editingScoreTarget}.`
+  }, [editing, t1, t2, editingScoreTarget, editingUsesSumRule, editingScoreValid])
 
   async function load(opts?: { silent?: boolean }) {
     const silent = !!opts?.silent
@@ -193,9 +201,15 @@ export default function AthleteRounds() {
       return
     }
 
-    if (!isValidRoundScore(n1, n2, editingScoreTarget)) {
+    const valid = editingUsesSumRule
+      ? isValidAmericanoCatScore(n1, n2, editingScoreTarget)
+      : isValidRoundScore(n1, n2, editingScoreTarget)
+
+    if (!valid) {
       setError(
-        `Placar inválido. Um time deve fechar em ${editingScoreTarget} e o outro deve ficar abaixo de ${editingScoreTarget}.`,
+        editingUsesSumRule
+          ? `Placar inválido. A soma dos dois times deve dar ${editingScoreTarget}.`
+          : `Placar inválido. Um time deve fechar em ${editingScoreTarget} e o outro deve ficar abaixo de ${editingScoreTarget}.`,
       )
       return
     }
@@ -424,7 +438,11 @@ export default function AthleteRounds() {
                     </div>
 
                     <div className="mt-2 text-[11px] text-white/60">
-                      Jogo até <b>{Number(m.score_target ?? 6)}</b>
+                      {Number(m.score_target ?? 6) > 6 ? (
+                        <>Soma do jogo: <b>{Number(m.score_target ?? 6)}</b></>
+                      ) : (
+                        <>Jogo até <b>{Number(m.score_target ?? 6)}</b></>
+                      )}
                     </div>
 
                     {showConfirm && (
@@ -442,22 +460,26 @@ export default function AthleteRounds() {
       )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-4">
-          <div className="w-full max-w-lg overflow-x-hidden rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl p-4 sm:p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl p-4">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+              <div>
                 <div className="text-lg font-extrabold">Lançar placar</div>
-                <div className="text-xs text-slate-300 mt-0.5 leading-relaxed break-words">
+                <div className="text-xs text-slate-300 mt-0.5">
                   {editing.team1_label ?? "Time 1"} vs {editing.team2_label ?? "Time 2"} • Quadra{" "}
                   {editing.court_no} • Ordem {editing.slot_no}
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                  Esta rodada é até <b>{editingScoreTarget}</b>.
+                  {editingUsesSumRule ? (
+                    <>A soma dos dois times deve dar <b>{editingScoreTarget}</b>.</>
+                  ) : (
+                    <>Esta rodada é até <b>{editingScoreTarget}</b>.</>
+                  )}
                 </div>
               </div>
 
               <button
-                className="btn-ghost shrink-0"
+                className="btn-ghost"
                 onClick={() => {
                   setEditing(null)
                   setT1("")
@@ -468,42 +490,36 @@ export default function AthleteRounds() {
               </button>
             </div>
 
-            <div className="mt-4 flex flex-col gap-4">
+            <div className="mt-4 flex flex-col gap-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
                 <div className="min-w-0">
                   <div className="text-xs text-slate-300 mb-1">Minha dupla</div>
-                  <select
+                  <input
+                    type="number"
+                    min={0}
+                    max={editingScoreTarget}
+                    inputMode="numeric"
                     className="input w-full"
                     value={t1}
                     onChange={(e) => setT1(e.target.value)}
-                  >
-                    <option value="">-</option>
-                    {editingScoreOptions.map((opt) => (
-                      <option key={`athlete-t1-${opt}`} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="0"
+                  />
                 </div>
 
-                <div className="hidden sm:flex items-center justify-center pb-3 text-xl font-extrabold">
-                  x
-                </div>
+                <div className="hidden sm:flex items-center justify-center pb-3 font-extrabold">x</div>
 
                 <div className="min-w-0">
                   <div className="text-xs text-slate-300 mb-1">Adversários</div>
-                  <select
+                  <input
+                    type="number"
+                    min={0}
+                    max={editingScoreTarget}
+                    inputMode="numeric"
                     className="input w-full"
                     value={t2}
                     onChange={(e) => setT2(e.target.value)}
-                  >
-                    <option value="">-</option>
-                    {editingScoreOptions.map((opt) => (
-                      <option key={`athlete-t2-${opt}`} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="0"
+                  />
                 </div>
               </div>
 
@@ -525,7 +541,9 @@ export default function AthleteRounds() {
                   title={
                     editingScoreValid
                       ? "Enviar placar"
-                      : `Placar inválido. Um time deve fechar em ${editingScoreTarget}.`
+                      : editingUsesSumRule
+                        ? `Placar inválido. A soma dos dois times deve dar ${editingScoreTarget}.`
+                        : `Placar inválido. Um time deve fechar em ${editingScoreTarget}.`
                   }
                 >
                   Enviar
@@ -541,7 +559,7 @@ export default function AthleteRounds() {
               {editingHelperText}
             </div>
 
-            <div className="text-xs text-slate-300 mt-2 leading-relaxed">
+            <div className="text-xs text-slate-300 mt-2">
               Ao enviar, o jogo fica <b>aguardando confirmação</b> do adversário.
             </div>
           </div>
