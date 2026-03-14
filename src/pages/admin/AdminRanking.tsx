@@ -64,7 +64,11 @@ type PlayerMatchRow = {
 };
 
 function classNames(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(" ");
+  return xs.filter(Boolean).join(" " );
+}
+
+function calcDraws(matchesPlayed: number, wins: number, losses: number) {
+  return Math.max((Number(matchesPlayed) || 0) - (Number(wins) || 0) - (Number(losses) || 0), 0);
 }
 
 function Badge({
@@ -941,6 +945,7 @@ export default function AdminRanking() {
                       <th className="print-center">J</th>
                       <th className="print-center">V</th>
                       <th className="print-center">D</th>
+                      <th className="print-center">E</th>
                       <th className="print-center">GP</th>
                       <th className="print-center">GC</th>
                       <th className="print-center">SG</th>
@@ -955,6 +960,7 @@ export default function AdminRanking() {
                         <td className="print-center">{r.matches_played}</td>
                         <td className="print-center">{r.wins}</td>
                         <td className="print-center">{r.losses}</td>
+                        <td className="print-center">{calcDraws(r.matches_played, r.wins, r.losses)}</td>
                         <td className="print-center">{r.games_for}</td>
                         <td className="print-center">{r.games_against}</td>
                         <td className="print-center">{r.games_diff >= 0 ? `+${r.games_diff}` : r.games_diff}</td>
@@ -1051,6 +1057,7 @@ export default function AdminRanking() {
                     <th className="px-4 py-3">J</th>
                     <th className="px-4 py-3">V</th>
                     <th className="px-4 py-3">D</th>
+                    <th className="px-4 py-3">E</th>
                     <th className="px-4 py-3">GP</th>
                     <th className="px-4 py-3">GC</th>
                     <th className="px-4 py-3">SG</th>
@@ -1061,15 +1068,15 @@ export default function AdminRanking() {
                 <tbody className="divide-y divide-white/10">
                   {loadingData && pairRows.length === 0 && (
                     <>
-                      <SkeletonRow cols={9} />
-                      <SkeletonRow cols={9} />
-                      <SkeletonRow cols={9} />
+                      <SkeletonRow cols={10} />
+                      <SkeletonRow cols={10} />
+                      <SkeletonRow cols={10} />
                     </>
                   )}
 
                   {!loadingData && pairRows.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="px-4 py-10 text-center text-sm text-white/60">
+                      <td colSpan={10} className="px-4 py-10 text-center text-sm text-white/60">
                         Nenhum dado para esta categoria/etapa (verifique se há jogos <b>played</b>).
                       </td>
                     </tr>
@@ -1095,6 +1102,7 @@ export default function AdminRanking() {
                       <td className="px-3 py-3">
                         <Badge tone="warning">{r.losses}</Badge>
                       </td>
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{calcDraws(r.matches_played, r.wins, r.losses)}</td>
                       <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_for}</td>
                       <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
                       <td className="px-3 py-3">
@@ -1114,6 +1122,7 @@ export default function AdminRanking() {
                     <th className="px-3 py-3">J</th>
                     <th className="px-3 py-3">V</th>
                     <th className="px-3 py-3">D</th>
+                    <th className="px-3 py-3">E</th>
                     <th className="px-3 py-3">GP</th>
                     <th className="px-3 py-3">GC</th>
                     <th className="px-3 py-3">Saldo</th>
@@ -1127,15 +1136,15 @@ export default function AdminRanking() {
                 <tbody className="divide-y divide-white/10">
                   {loadingData && stageRows.length === 0 && (
                     <>
-                      <SkeletonRow cols={12} />
-                      <SkeletonRow cols={12} />
-                      <SkeletonRow cols={12} />
+                      <SkeletonRow cols={13} />
+                      <SkeletonRow cols={13} />
+                      <SkeletonRow cols={13} />
                     </>
                   )}
 
                   {!loadingData && stageRows.length === 0 && (
                     <tr>
-                      <td colSpan={12} className="px-4 py-10 text-center text-sm text-white/60">
+                      <td colSpan={13} className="px-4 py-10 text-center text-sm text-white/60">
                         Nenhum dado para esta categoria/etapa (verifique se há jogos <b>played</b>).
                       </td>
                     </tr>
@@ -1170,6 +1179,8 @@ export default function AdminRanking() {
                       <td className="px-3 py-3">
                         <Badge tone="warning">{r.losses}</Badge>
                       </td>
+
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{calcDraws(r.matches_played, r.wins, r.losses)}</td>
 
                       <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_games_for ?? r.games_for}</td>
                       <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
