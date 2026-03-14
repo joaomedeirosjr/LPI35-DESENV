@@ -24,8 +24,27 @@ type ProfileRow = {
   categoria: string | null
 }
 
+type GuestRow = {
+  id: string
+  name: string | null
+}
+
+type StageRosterRow = {
+  id: string
+  stage_id: number
+  kind: string | null
+  athlete_id?: string | null
+  guest_id?: string | null
+  category?: string | null
+  roster_category?: string | null
+  created_at?: string | null
+}
+
 type Joined = {
-  athlete_id: string
+  row_key: string
+  person_type: 'Atleta' | 'Convidado'
+  athlete_id?: string | null
+  guest_id?: string | null
   athlete_name: string
   email: string
   category: string
@@ -58,11 +77,11 @@ function stageLabel(s: StageRow) {
 }
 
 function downloadCsv(filename: string, rows: string[][]) {
-  const esc = (x: string) => `"${String(x ?? '').replace(/"/g, '""')}"`
-  const csv = rows.map(r => r.map(esc).join(';')).join('\r\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const esc = (x: string) => `"${String(x ?? "").replace(/"/g, '""')}"`
+  const csv = rows.map((r) => r.map(esc).join(";")).join("\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
   const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
+  const a = document.createElement("a")
   a.href = url
   a.download = filename
   document.body.appendChild(a)
@@ -78,7 +97,7 @@ export default function AdminStageParticipants() {
   const [stages, setStages] = useState<StageRow[]>([])
   const [stageId, setStageId] = useState<string>('')
 
-  const [tab, setTab] = useState<TabKey>('going') // going=Confirmados / notGoing=Recusaram
+  const [tab, setTab] = useState<TabKey>('going')
   const [people, setPeople] = useState<Joined[]>([])
 
   const isGoing = tab === 'going'
@@ -109,27 +128,29 @@ export default function AdminStageParticipants() {
 
       if (e1) throw e1
       const rows = (sp as SPRow[]) ?? []
-      const ids = Array.from(new Set(rows.map(r => r.athlete_id).filter(Boolean)))
+      const athleteIds = Array.from(new Set(rows.map(r => r.athlete_id).filter(Boolean)))
 
-      if (!ids.length) {
-        setPeople([])
-        return
+      let profiles: ProfileRow[] = []
+      if (athleteIds.length > 0) {
+        const { data: prof, error: e2 } = await supabase
+          .from('profiles')
+          .select('id,nome,email,category,categoria')
+          .in('id', athleteIds)
+
+        if (e2) throw e2
+        profiles = (prof as ProfileRow[]) ?? []
       }
 
-      const { data: prof, error: e2 } = await supabase
-        .from('profiles')
-        .select('id,nome,email,category,categoria')
-        .in('id', ids)
-
-      if (e2) throw e2
-      const profiles = (prof as ProfileRow[]) ?? []
       const byId = new Map(profiles.map(p => [p.id, p]))
 
-      const joined: Joined[] = rows.map(r => {
+      const athleteJoined: Joined[] = rows.map(r => {
         const p = byId.get(r.athlete_id)
         const cat = (p?.category || p?.categoria || '').trim() || 'Sem categoria'
         return {
+          row_key: `athlete:${r.athlete_id}`,
+          person_type: 'Atleta',
           athlete_id: r.athlete_id,
+          guest_id: null,
           athlete_name: (p?.nome || '').trim() || '(sem nome)',
           email: (p?.email || '').trim() || '-',
           category: cat,
@@ -137,13 +158,60 @@ export default function AdminStageParticipants() {
         }
       })
 
-      joined.sort((a, b) => {
+      let allJoined = athleteJoined.slice()
+
+      if (going) {
+        const { data: rosterData, error: rosterError } = await supabase
+          .from('stage_roster')
+          .select('*')
+          .eq('stage_id', stage_id)
+          .eq('kind', 'guest')
+
+        if (rosterError) throw rosterError
+
+        const rosterRows = ((rosterData || []) as StageRosterRow[]).filter(r => String(r.kind || '').toLowerCase().trim() === 'guest')
+        const guestIds = Array.from(new Set(rosterRows.map(r => String(r.guest_id || '').trim()).filter(Boolean)))
+
+        let guests: GuestRow[] = []
+        if (guestIds.length > 0) {
+          const { data: guestData, error: guestError } = await supabase
+            .from('guests')
+            .select('id,name')
+            .in('id', guestIds)
+
+          if (guestError) throw guestError
+          guests = (guestData as GuestRow[]) ?? []
+        }
+
+        const guestById = new Map(guests.map(g => [g.id, g]))
+
+        const guestJoined: Joined[] = rosterRows.map(r => {
+          const guestId = String(r.guest_id || '').trim()
+          const g = guestById.get(guestId)
+          const cat = String(r.roster_category || r.category || '').trim() || 'Sem categoria'
+          return {
+            row_key: `guest:${r.id}`,
+            person_type: 'Convidado',
+            athlete_id: null,
+            guest_id: guestId || null,
+            athlete_name: (g?.name || '').trim() || '(sem nome)',
+            email: '-',
+            category: cat,
+            responded_at: r.created_at || null,
+          }
+        })
+
+        allJoined = [...athleteJoined, ...guestJoined]
+      }
+
+      allJoined.sort((a, b) => {
         const c = a.category.localeCompare(b.category)
         if (c !== 0) return c
+        if (a.person_type !== b.person_type) return a.person_type.localeCompare(b.person_type)
         return a.athlete_name.localeCompare(b.athlete_name)
       })
 
-      setPeople(joined)
+      setPeople(allJoined)
     } catch (err: any) {
       setError(err?.message || String(err))
       setPeople([])
@@ -194,10 +262,10 @@ export default function AdminStageParticipants() {
     const kind = isGoing ? 'confirmados' : 'recusaram'
 
     const rows: string[][] = []
-    rows.push(['categoria', 'atleta', 'email', 'respondido_em', 'status'])
+    rows.push(['categoria', 'tipo', 'nome', 'email', 'respondido_em', 'status'])
     for (const [cat, list] of grouped) {
       for (const p of list) {
-        rows.push([cat, p.athlete_name, p.email, fmtDateTime(p.responded_at), isGoing ? 'Vou' : 'Não vou'])
+        rows.push([cat, p.person_type, p.athlete_name, p.email, fmtDateTime(p.responded_at), isGoing ? 'Vou/Inscrito' : 'Não vou'])
       }
     }
     downloadCsv(`participantes_${kind}_${safe}.csv`, rows)
@@ -205,7 +273,7 @@ export default function AdminStageParticipants() {
 
   const title = isGoing ? 'Confirmados (Vou)' : 'Recusaram (Não vou)'
   const subtitle = isGoing
-    ? 'Lista de atletas que marcaram Vou, agrupado por categoria.'
+    ? 'Lista de atletas que marcaram Vou e convidados inscritos na etapa, agrupado por categoria.'
     : 'Lista de atletas que marcaram Não vou, agrupado por categoria.'
 
   const tabBtn = (active: boolean) =>
@@ -294,27 +362,29 @@ export default function AdminStageParticipants() {
           {!stageId ? (
             <div className='text-slate-300'>Selecione uma etapa acima.</div>
           ) : grouped.length === 0 ? (
-            <div className='text-slate-300'>Nenhum atleta nesta aba para esta etapa.</div>
+            <div className='text-slate-300'>Nenhum participante nesta aba para esta etapa.</div>
           ) : (
             grouped.map(([cat, list]) => (
               <div key={cat} className='rounded-2xl border border-white/10 bg-white/5 p-4'>
                 <div className='flex items-center justify-between'>
                   <div className='text-lg font-extrabold'>{cat}</div>
-                  <div className='text-sm text-slate-300'>{list.length} atleta(s)</div>
+                  <div className='text-sm text-slate-300'>{list.length} participante(s)</div>
                 </div>
 
                 <div className='mt-3 overflow-x-auto'>
                   <table className='w-full text-sm'>
                     <thead>
                       <tr className='text-slate-300'>
-                        <th className='text-left py-2 pr-3'>Atleta</th>
+                        <th className='text-left py-2 pr-3'>Tipo</th>
+                        <th className='text-left py-2 pr-3'>Nome</th>
                         <th className='text-left py-2 pr-3'>Email</th>
                         <th className='text-left py-2'>Respondido em</th>
                       </tr>
                     </thead>
                     <tbody>
                       {list.map((p) => (
-                        <tr key={p.athlete_id} className='border-t border-white/10'>
+                        <tr key={p.row_key} className='border-t border-white/10'>
+                          <td className='py-2 pr-3 text-slate-200'>{p.person_type}</td>
                           <td className='py-2 pr-3 text-white'>{p.athlete_name}</td>
                           <td className='py-2 pr-3 text-slate-200'>{p.email}</td>
                           <td className='py-2 text-slate-200'>{fmtDateTime(p.responded_at)}</td>
