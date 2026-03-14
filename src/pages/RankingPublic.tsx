@@ -785,7 +785,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                         <td className="px-4 py-3 font-bold">{r.matches_played}</td>
                         <td className="px-4 py-3 font-extrabold text-emerald-200">{r.wins}</td>
                         <td className="px-4 py-3 font-extrabold text-orange-200">{r.losses}</td>
-                        <td className="px-4 py-3 font-bold">{r.adjusted_games_for ?? r.games_for}</td>
+                        <td className="px-4 py-3 font-bold">{r.games_for}</td>
                         <td className="px-4 py-3 font-bold">{r.games_against}</td>
                         <td className="px-4 py-3 font-extrabold">{r.games_diff >= 0 ? `+${r.games_diff}` : r.games_diff}</td>
                         <td className="px-4 py-3">{r.age_sum ?? "-"}</td>
@@ -851,7 +851,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                         <td className="px-4 py-3 font-bold">{r.matches_played}</td>
                         <td className="px-4 py-3 font-extrabold text-emerald-200">{r.wins}</td>
                         <td className="px-4 py-3 font-extrabold text-orange-200">{r.losses}</td>
-                        <td className="px-4 py-3 font-bold">{r.games_for}</td>
+                        <td className="px-4 py-3 font-bold">{r.adjusted_games_for ?? r.games_for}</td>
                         <td className="px-4 py-3 font-bold">{r.games_against}</td>
                         <td className="px-4 py-3 font-extrabold">{(r.adjusted_games_diff ?? r.games_diff) >= 0 ? `+${r.adjusted_games_diff ?? r.games_diff}` : (r.adjusted_games_diff ?? r.games_diff)}</td>
                         <td className="px-4 py-3">
