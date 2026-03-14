@@ -23,6 +23,7 @@ type StageRankingRow = {
   bonus_less_games: number;
   adjusted_matches_played: number;
   adjusted_games_diff: number;
+  adjusted_games_for: number;
 };
 
 type SeasonRankingRow = {
@@ -532,7 +533,7 @@ export default function AdminRanking() {
 
         const { data, error } = await supabase
           .from("v_ranking_stage_players")
-          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,age_years,position,bonus_less_games,adjusted_matches_played,adjusted_games_diff")
+          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,age_years,position,bonus_less_games,adjusted_matches_played,adjusted_games_diff,adjusted_games_for")
           .eq("stage_id", stageId)
           .eq("category", category)
           .order("position", { ascending: true });
@@ -554,6 +555,7 @@ export default function AdminRanking() {
           bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
           adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
           adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
+          adjusted_games_for: Number(r.adjusted_games_for ?? r.games_for ?? 0) || 0,
         }));
 
         setStageRows(rows);
@@ -1169,7 +1171,7 @@ export default function AdminRanking() {
                         <Badge tone="warning">{r.losses}</Badge>
                       </td>
 
-                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_for}</td>
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_games_for ?? r.games_for}</td>
                       <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
 
                       <td className="px-3 py-3">
