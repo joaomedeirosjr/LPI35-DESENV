@@ -137,6 +137,9 @@ type Overview = {
     games_for: number
     games_against: number
     games_diff: number
+    bonus_less_games: number
+    adjusted_games_diff: number
+    adjusted_matches_played: number
     stage_points: number | null
     stage_position: number | null
   }>
@@ -284,7 +287,7 @@ function StageEvolutionSvgChart({ byStage }: { byStage: any[] }) {
       wins: Number(s.wins ?? 0),
       losses: Number(s.losses ?? 0),
       played: Number(s.played ?? 0),
-      gamesDiff: Number(s.games_diff ?? 0),
+      gamesDiff: Number(s.adjusted_games_diff ?? s.games_diff ?? 0),
     }))
   }, [byStage])
 
@@ -605,7 +608,11 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
     const [seasonsRes, clubsRes, posRes, ov, bp] = await Promise.all([
       supabase.from("seasons").select("id, name").in("id", seasonIds),
       clubIds.length ? supabase.from("clubs").select("id, name").in("id", clubIds) : Promise.resolve({ data: [], error: null } as any),
-      supabase.from("v_ranking_stage_players").select("stage_id, category, profile_id, position").eq("profile_id", uid).in("stage_id", stageIds),
+      supabase
+        .from("v_ranking_stage_players")
+        .select("stage_id, category, profile_id, position, bonus_less_games, adjusted_games_diff, adjusted_matches_played")
+        .eq("profile_id", uid)
+        .in("stage_id", stageIds),
       supabase.rpc("athlete_analytics_overview", { p_season_id: null }),
       supabase.rpc("athlete_analytics_best_partner", { p_season_id: null }),
     ])
@@ -618,9 +625,16 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
 
     const posKey = (stage_id: number, category: string) => `${stage_id}|${category}`
     const posBy = new Map<string, number>()
+    const rankExtraBy = new Map<string, { bonus_less_games: number; adjusted_games_diff: number; adjusted_matches_played: number }>()
     if (!posRes.error) {
       for (const r of (posRes.data ?? []) as any[]) {
-        posBy.set(posKey(Number(r.stage_id), String(r.category)), Number(r.position ?? 0))
+        const key = posKey(Number(r.stage_id), String(r.category))
+        posBy.set(key, Number(r.position ?? 0))
+        rankExtraBy.set(key, {
+          bonus_less_games: Number(r.bonus_less_games ?? 0),
+          adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0),
+          adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0),
+        })
       }
     }
 
@@ -635,6 +649,7 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
       const wins = Number(r.wins ?? 0)
       const losses = Number(r.losses ?? 0)
       const win_rate = played > 0 ? (wins / played) * 100 : 0
+      const rankExtra = rankExtraBy.get(posKey(sid, String(r.category)))
 
       const stage_points = wins * 10
 
@@ -652,6 +667,9 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
         games_for: Number(r.games_for ?? 0),
         games_against: Number(r.games_against ?? 0),
         games_diff: Number(r.games_diff ?? 0),
+        bonus_less_games: Number(rankExtra?.bonus_less_games ?? 0),
+        adjusted_games_diff: Number(rankExtra?.adjusted_games_diff ?? r.games_diff ?? 0),
+        adjusted_matches_played: Number(rankExtra?.adjusted_matches_played ?? r.matches_played ?? 0),
         stage_points,
         stage_position: posBy.get(posKey(sid, String(r.category))) ?? null,
       }
@@ -662,7 +680,8 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
     const totalLosses = byStage.reduce((acc, x) => acc + Number(x.losses ?? 0), 0)
     const totalGF = byStage.reduce((acc, x) => acc + Number(x.games_for ?? 0), 0)
     const totalGA = byStage.reduce((acc, x) => acc + Number(x.games_against ?? 0), 0)
-    const totalDiff = totalGF - totalGA
+    const totalDiff = byStage.reduce((acc, x) => acc + Number(x.adjusted_games_diff ?? x.games_diff ?? 0), 0)
+    const totalBonus = byStage.reduce((acc, x) => acc + Number(x.bonus_less_games ?? 0), 0)
     const totalWR = totalPlayed > 0 ? (totalWins / totalPlayed) * 100 : 0
 
     const bySeasonMap = new Map<string, any>()
@@ -681,6 +700,8 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
         total_points: 0,
         stages_played: 0,
         win_rate: 0,
+        bonus_less_games: 0,
+        adjusted_games_diff: 0,
       }
       cur.played += Number(st.played ?? 0)
       cur.wins += Number(st.wins ?? 0)
@@ -688,12 +709,14 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
       cur.games_for += Number(st.games_for ?? 0)
       cur.games_against += Number(st.games_against ?? 0)
       cur.total_points += Number(st.stage_points ?? 0)
+      cur.bonus_less_games += Number(st.bonus_less_games ?? 0)
+      cur.adjusted_games_diff += Number(st.adjusted_games_diff ?? st.games_diff ?? 0)
       cur.stages_played += Number(st.played ?? 0) > 0 ? 1 : 0
       bySeasonMap.set(key, cur)
     }
 
     const bySeason = Array.from(bySeasonMap.values()).map((x) => {
-      x.games_diff = Number(x.games_for) - Number(x.games_against)
+      x.games_diff = Number(x.adjusted_games_diff ?? 0)
       x.win_rate = Number(x.played) > 0 ? (Number(x.wins) / Number(x.played)) * 100 : 0
       return x
     })
@@ -710,7 +733,8 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
         games_for: totalGF,
         games_against: totalGA,
         games_diff: totalDiff,
-      },
+        bonus_less_games: totalBonus,
+      } as any,
       bySeason,
       byStage,
       lastMatches,
@@ -776,10 +800,11 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
         <StatCard label="Win rate" value={pct(data.summary.win_rate)} />
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <StatCard label="Games pró" value={data.summary.games_for} />
         <StatCard label="Games contra" value={data.summary.games_against} />
-        <StatCard label="Saldo" value={data.summary.games_diff} />
+        <StatCard label="Saldo ajustado" value={data.summary.games_diff} />
+        <StatCard label="Compensação" value={Number((data.summary as any).bonus_less_games ?? 0) > 0 ? `+${Number((data.summary as any).bonus_less_games)}` : "—"} />
       </div>
 
       <div className="card p-4">
@@ -816,6 +841,8 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
                 <th className="text-right py-2 px-2">V</th>
                 <th className="text-right py-2 px-2">D</th>
                 <th className="text-right py-2 px-2">Win%</th>
+                <th className="text-right py-2 px-2">Comp.</th>
+                <th className="text-right py-2 px-2">Comp.</th>
                 <th className="text-right py-2 pl-2">Saldo</th>
               </tr>
             </thead>
@@ -829,6 +856,7 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
                   <td className="py-2 px-2 text-right">{s.wins}</td>
                   <td className="py-2 px-2 text-right">{s.losses}</td>
                   <td className="py-2 px-2 text-right">{pct(s.win_rate)}</td>
+                  <td className="py-2 px-2 text-right">{Number(s.bonus_less_games ?? 0) > 0 ? `+${Number(s.bonus_less_games)}` : "—"}</td>
                   <td className="py-2 pl-2 text-right">{s.games_diff}</td>
                 </tr>
               ))}
@@ -852,6 +880,8 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
                 <th className="text-right py-2 px-2">D</th>
                 <th className="text-right py-2 px-2">Win%</th>
                 <th className="text-right py-2 px-2">Saldo</th>
+                <th className="text-right py-2 px-2">Comp.</th>
+                <th className="text-right py-2 px-2">J. Ajust.</th>
                 <th className="text-right py-2 px-2">Pontos</th>
                 <th className="text-right py-2 pl-2">Posição</th>
               </tr>
@@ -865,7 +895,9 @@ export default function AthleteAnalyticsPage({ embedded = true }: { embedded?: b
                   <td className="py-2 px-2 text-right">{st.wins}</td>
                   <td className="py-2 px-2 text-right">{st.losses}</td>
                   <td className="py-2 px-2 text-right">{pct(st.win_rate)}</td>
-                  <td className="py-2 px-2 text-right">{st.games_diff}</td>
+                  <td className="py-2 px-2 text-right">{st.adjusted_games_diff}</td>
+                  <td className="py-2 px-2 text-right">{Number(st.bonus_less_games ?? 0) > 0 ? `+${Number(st.bonus_less_games)}` : "—"}</td>
+                  <td className="py-2 px-2 text-right">{st.adjusted_matches_played}</td>
                   <td className="py-2 px-2 text-right">{st.stage_points ?? "—"}</td>
                   <td className="py-2 pl-2 text-right">{st.stage_position ?? "—"}</td>
                 </tr>

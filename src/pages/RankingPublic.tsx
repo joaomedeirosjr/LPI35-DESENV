@@ -18,6 +18,9 @@ type StageRankingRow = {
   games_for: number;
   games_against: number;
   games_diff: number;
+  bonus_less_games: number;
+  adjusted_matches_played: number;
+  adjusted_games_diff: number;
   stage_points: number;
   age_years: number | null;
 };
@@ -393,7 +396,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
 
         const { data, error } = await supabase
           .from("v_ranking_stage_players")
-          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,age_years,position")
+          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,bonus_less_games,adjusted_matches_played,adjusted_games_diff,age_years,position")
           .eq("stage_id", stageId)
           .eq("category", category)
           .order("position", { ascending: true });
@@ -410,6 +413,9 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
           games_for: Number(r.games_for ?? 0) || 0,
           games_against: Number(r.games_against ?? 0) || 0,
           games_diff: Number(r.games_diff ?? 0) || 0,
+          bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
+          adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
+          adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
           age_years: r.age_years == null ? null : Number(r.age_years),
           stage_points: (Number(r.wins ?? 0) || 0) * 10,
         }));
@@ -786,25 +792,27 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                   </tbody>
                 </table>
               ) : tab === "stage" ? (
-                <table className="min-w-[980px] w-full text-left">
+                <table className="min-w-[1120px] w-full text-left">
                   <thead className="bg-[#0f172a] text-xs font-bold text-white/60">
                     <tr className="border-b border-white/10">
                       <th className="px-4 py-3">POS</th>
                       <th className="px-4 py-3">ATLETA</th>
-                      <th className="px-4 py-3">JOGOS</th>
-                      <th className="px-4 py-3">VITÓRIAS</th>
-                      <th className="px-4 py-3">DERROTAS</th>
-                      <th className="px-4 py-3">GAMES PRÓ</th>
-                      <th className="px-4 py-3">GAMES CONTRA</th>
+                      <th className="px-4 py-3">J</th>
+                      <th className="px-4 py-3">V</th>
+                      <th className="px-4 py-3">D</th>
+                      <th className="px-4 py-3">GP</th>
+                      <th className="px-4 py-3">GC</th>
                       <th className="px-4 py-3">SALDO</th>
+                      <th className="px-4 py-3">COMP.</th>
+                      <th className="px-4 py-3">J. AJUST.</th>
                       <th className="px-4 py-3">IDADE</th>
-                      <th className="px-4 py-3">PTS</th>
+                      <th className="px-4 py-3 whitespace-nowrap">PTS ETAPA</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!loading && stageRows.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="px-4 py-10 text-center text-sm text-white/60">
+                        <td colSpan={12} className="px-4 py-10 text-center text-sm text-white/60">
                           Sem dados (verifique etapa/categoria e jogos played).
                         </td>
                       </tr>
@@ -843,9 +851,19 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                         <td className="px-4 py-3 font-extrabold text-orange-200">{r.losses}</td>
                         <td className="px-4 py-3 font-bold">{r.games_for}</td>
                         <td className="px-4 py-3 font-bold">{r.games_against}</td>
-                        <td className="px-4 py-3 font-extrabold">{r.games_diff}</td>
-                        <td className="px-4 py-3">{r.age_years ?? "-"}</td>
+                        <td className="px-4 py-3 font-extrabold">{(r.adjusted_games_diff ?? r.games_diff) >= 0 ? `+${r.adjusted_games_diff ?? r.games_diff}` : (r.adjusted_games_diff ?? r.games_diff)}</td>
                         <td className="px-4 py-3">
+                          {r.bonus_less_games > 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2.5 py-1 text-xs font-extrabold text-sky-200 ring-1 ring-sky-500/25">
+                              +{r.bonus_less_games}
+                            </span>
+                          ) : (
+                            <span className="text-white/40">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-extrabold">{r.adjusted_matches_played ?? r.matches_played}</td>
+                        <td className="px-4 py-3">{r.age_years ?? "-"}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
                           <span className="inline-flex items-center rounded-xl bg-orange-500 px-3 py-2 text-sm font-extrabold text-white">{r.stage_points}</span>
                         </td>
                       </tr>

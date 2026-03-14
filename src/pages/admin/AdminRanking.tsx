@@ -20,6 +20,9 @@ type StageRankingRow = {
   games_diff: number;
   stage_points: number;
   age_years: number | null;
+  bonus_less_games: number;
+  adjusted_matches_played: number;
+  adjusted_games_diff: number;
 };
 
 type SeasonRankingRow = {
@@ -237,7 +240,7 @@ function PlayerDetailsModal({
 
                   {rows.map((m) => (
                     <tr key={m.match_id} className="border-t border-white/10 hover:bg-white/5">
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <ResultPill r={m.result} />
                       </td>
                       <td className="px-4 py-3 font-extrabold">
@@ -245,8 +248,8 @@ function PlayerDetailsModal({
                       </td>
                       <td className="px-4 py-3 font-bold">{m.team_label}</td>
                       <td className="px-4 py-3 font-bold text-white/90">{m.opp_label}</td>
-                      <td className="px-4 py-3">{m.court_no ?? "-"}</td>
-                      <td className="px-4 py-3">{m.slot_no ?? "-"}</td>
+                      <td className="px-3 py-3">{m.court_no ?? "-"}</td>
+                      <td className="px-3 py-3">{m.slot_no ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -529,7 +532,7 @@ export default function AdminRanking() {
 
         const { data, error } = await supabase
           .from("v_ranking_stage_players")
-          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,age_years,position")
+          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,age_years,position,bonus_less_games,adjusted_matches_played,adjusted_games_diff")
           .eq("stage_id", stageId)
           .eq("category", category)
           .order("position", { ascending: true });
@@ -548,6 +551,9 @@ export default function AdminRanking() {
           games_diff: Number(r.games_diff ?? 0) || 0,
           age_years: r.age_years == null ? null : Number(r.age_years),
           stage_points: (Number(r.wins ?? 0) || 0) * 10,
+          bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
+          adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
+          adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
         }));
 
         setStageRows(rows);
@@ -660,10 +666,11 @@ export default function AdminRanking() {
       if (!stageRows.length) return null;
       const totalMatches = stageRows.reduce((acc, r) => acc + (r.matches_played ?? 0), 0);
       const avgGamesDiff = stageRows.reduce((acc, r) => acc + (r.games_diff ?? 0), 0) / stageRows.length;
+      const totalBonus = stageRows.reduce((acc, r) => acc + (r.bonus_less_games ?? 0), 0);
       return [
         { label: "Atletas ranqueados", value: stageRows.length },
         { label: "Jogos (somado por atleta)", value: totalMatches },
-        { label: "Média saldo games", value: avgGamesDiff.toFixed(2) },
+        { label: "Compensação total", value: totalBonus },
       ];
     }
 
@@ -1069,27 +1076,27 @@ export default function AdminRanking() {
 
                   {pairRows.map((r) => (
                     <tr key={r.pair_id} className={classNames(topRowTone(r.pos), "ring-1")}>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <span className="inline-flex h-8 min-w-10 items-center justify-center gap-1 rounded-2xl bg-[#1f2937] px-2 text-sm font-extrabold text-white">
                           {medalForPos(r.pos) && <span className="text-base leading-none">{medalForPos(r.pos)}</span>}
                           <span>{r.pos}</span>
                         </span>
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="font-extrabold text-white">{r.pair_label}</div>
                       </td>
 
-                      <td className="px-4 py-3 text-sm font-bold text-white/80">{r.matches_played}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.matches_played}</td>
+                      <td className="px-3 py-3">
                         <Badge tone="success">{r.wins}</Badge>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <Badge tone="warning">{r.losses}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm font-bold text-white/80">{r.games_for}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_for}</td>
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
+                      <td className="px-3 py-3">
                         <span className="text-sm font-extrabold text-white/90">{r.games_diff >= 0 ? `+${r.games_diff}` : r.games_diff}</span>
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-white/80">{r.age_sum ?? "-"}</td>
@@ -1098,34 +1105,36 @@ export default function AdminRanking() {
                 </tbody>
               </table>
             ) : tab === "stage" ? (
-              <table className="min-w-[1040px] w-full text-left">
+              <table className="min-w-[1060px] w-full text-left">
                 <thead className="sticky top-0 z-10 bg-[#0f172a]">
                   <tr className="border-b border-white/10 text-xs font-bold uppercase tracking-wide text-white/60">
                     <th className="px-4 py-3">Pos</th>
                     <th className="px-4 py-3">Atleta</th>
-                    <th className="px-4 py-3">Jogos</th>
-                    <th className="px-4 py-3">Vitórias</th>
-                    <th className="px-4 py-3">Derrotas</th>
-                    <th className="px-4 py-3">Games Pró</th>
-                    <th className="px-4 py-3">Games Contra</th>
-                    <th className="px-4 py-3">Saldo</th>
-                    <th className="px-4 py-3">Idade</th>
-                    <th className="px-4 py-3">Pts Etapa</th>
+                    <th className="px-3 py-3">J</th>
+                    <th className="px-3 py-3">V</th>
+                    <th className="px-3 py-3">D</th>
+                    <th className="px-3 py-3">GP</th>
+                    <th className="px-3 py-3">GC</th>
+                    <th className="px-3 py-3">Saldo</th>
+                    <th className="px-3 py-3">Comp.</th>
+                    <th className="px-3 py-3">J. Ajust.</th>
+                    <th className="px-3 py-3">Idade</th>
+                    <th className="px-3 py-3 whitespace-nowrap">Pts Etapa</th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-white/10">
                   {loadingData && stageRows.length === 0 && (
                     <>
-                      <SkeletonRow cols={10} />
-                      <SkeletonRow cols={10} />
-                      <SkeletonRow cols={10} />
+                      <SkeletonRow cols={12} />
+                      <SkeletonRow cols={12} />
+                      <SkeletonRow cols={12} />
                     </>
                   )}
 
                   {!loadingData && stageRows.length === 0 && (
                     <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-sm text-white/60">
+                      <td colSpan={12} className="px-4 py-10 text-center text-sm text-white/60">
                         Nenhum dado para esta categoria/etapa (verifique se há jogos <b>played</b>).
                       </td>
                     </tr>
@@ -1140,37 +1149,49 @@ export default function AdminRanking() {
                         setDetailsOpen(true);
                       }}
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <span className="inline-flex h-8 w-10 items-center justify-center rounded-2xl bg-[#1f2937] text-sm font-extrabold text-white">
                           {r.pos}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="font-extrabold text-white">{r.player_name}</div>
-                        <div className="mt-0.5 text-xs text-white/60">{r.profile_id}</div>
+                        <div className="mt-0.5 hidden xl:block text-xs text-white/60">{r.profile_id}</div>
                       </td>
 
-                      <td className="px-4 py-3 text-sm font-bold text-white/80">{r.matches_played}</td>
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.matches_played}</td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <Badge tone="success">{r.wins}</Badge>
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <Badge tone="warning">{r.losses}</Badge>
                       </td>
 
-                      <td className="px-4 py-3 text-sm font-bold text-white/80">{r.games_for}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_for}</td>
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
 
-                      <td className="px-4 py-3">
-                        <span className="text-sm font-extrabold text-white/90">{r.games_diff}</span>
+                      <td className="px-3 py-3">
+                        <span className="text-sm font-extrabold text-white/90">{(r.adjusted_games_diff ?? r.games_diff ?? 0) >= 0 ? `+${r.adjusted_games_diff ?? r.games_diff ?? 0}` : (r.adjusted_games_diff ?? r.games_diff ?? 0)}</span>
                       </td>
 
-                      <td className="px-4 py-3 text-sm font-bold text-white/80">{r.age_years ?? "-"}</td>
+                      <td className="px-3 py-3">
+                        {r.bonus_less_games > 0 ? (
+                          <span className="inline-flex items-center rounded-2xl bg-sky-500/15 px-3 py-2 text-sm font-extrabold text-sky-200 ring-1 ring-sky-500/25">
+                            +{r.bonus_less_games}
+                          </span>
+                        ) : (
+                          <span className="text-sm font-bold text-white/40">—</span>
+                        )}
+                      </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_matches_played}</td>
+
+                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.age_years ?? "-"}</td>
+
+                      <td className="px-3 py-3">
                         <span className="inline-flex items-center rounded-2xl bg-orange-500 px-3 py-2 text-sm font-extrabold text-white shadow-sm">
                           {r.stage_points}
                         </span>
@@ -1207,19 +1228,19 @@ export default function AdminRanking() {
 
                   {seasonRows.map((r) => (
                     <tr key={r.profile_id} className="hover:bg-white/5">
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <span className="inline-flex h-8 w-10 items-center justify-center rounded-2xl bg-[#1f2937] text-sm font-extrabold text-white">
                           {r.pos}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="font-extrabold text-white">{r.player_name}</div>
-                        <div className="mt-0.5 text-xs text-white/60">{r.profile_id}</div>
+                        <div className="mt-0.5 hidden xl:block text-xs text-white/60">{r.profile_id}</div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <Badge>{r.stages_played} etapas</Badge>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <span className="inline-flex items-center rounded-2xl bg-orange-500 px-3 py-2 text-sm font-extrabold text-white shadow-sm">
                           {r.total_points}
                         </span>
