@@ -21,6 +21,7 @@ type StageRankingRow = {
   bonus_less_games: number;
   adjusted_matches_played: number;
   adjusted_games_diff: number;
+  adjusted_games_for: number;
   stage_points: number;
   age_years: number | null;
 };
@@ -396,7 +397,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
 
         const { data, error } = await supabase
           .from("v_ranking_stage_players")
-          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,bonus_less_games,adjusted_matches_played,adjusted_games_diff,age_years,position")
+          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,bonus_less_games,adjusted_matches_played,adjusted_games_diff,adjusted_games_for,age_years,position")
           .eq("stage_id", stageId)
           .eq("category", category)
           .order("position", { ascending: true });
@@ -416,6 +417,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
           bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
           adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
           adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
+          adjusted_games_for: Number(r.adjusted_games_for ?? r.games_for ?? 0) || 0,
           age_years: r.age_years == null ? null : Number(r.age_years),
           stage_points: (Number(r.wins ?? 0) || 0) * 10,
         }));
@@ -783,7 +785,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                         <td className="px-4 py-3 font-bold">{r.matches_played}</td>
                         <td className="px-4 py-3 font-extrabold text-emerald-200">{r.wins}</td>
                         <td className="px-4 py-3 font-extrabold text-orange-200">{r.losses}</td>
-                        <td className="px-4 py-3 font-bold">{r.games_for}</td>
+                        <td className="px-4 py-3 font-bold">{r.adjusted_games_for ?? r.games_for}</td>
                         <td className="px-4 py-3 font-bold">{r.games_against}</td>
                         <td className="px-4 py-3 font-extrabold">{r.games_diff >= 0 ? `+${r.games_diff}` : r.games_diff}</td>
                         <td className="px-4 py-3">{r.age_sum ?? "-"}</td>
