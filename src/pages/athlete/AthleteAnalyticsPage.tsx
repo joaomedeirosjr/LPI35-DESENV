@@ -120,6 +120,9 @@ type Overview = {
     games_for: number
     games_against: number
     games_diff: number
+    bonus_less_games: number
+    adjusted_games_diff: number
+    adjusted_matches_played?: number
     total_points: number
     stages_played: number
   }>

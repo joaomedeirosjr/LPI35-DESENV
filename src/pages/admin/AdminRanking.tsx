@@ -665,7 +665,6 @@ export default function AdminRanking() {
     if (tab === "stage") {
       if (!stageRows.length) return null;
       const totalMatches = stageRows.reduce((acc, r) => acc + (r.matches_played ?? 0), 0);
-      const avgGamesDiff = stageRows.reduce((acc, r) => acc + (r.games_diff ?? 0), 0) / stageRows.length;
       const totalBonus = stageRows.reduce((acc, r) => acc + (r.bonus_less_games ?? 0), 0);
       return [
         { label: "Atletas ranqueados", value: stageRows.length },
