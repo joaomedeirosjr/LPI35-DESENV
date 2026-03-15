@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 
 type Category = "A" | "B" | "C" | "D";
 type TabKey = "pairs" | "stage" | "season";
+type StageViewMode = "official" | "final";
 
 type SeasonRow = { id: string; name: string | null; created_at?: string | null };
 type StageRow = { id: number; name: string | null; season_id: string | null; status: string | null };
@@ -24,6 +25,26 @@ type StageRankingRow = {
   adjusted_games_for: number;
   stage_points: number;
   age_years: number | null;
+};
+
+type StageClassificationRow = {
+  pos: number;
+  roster_id: string;
+  kind: "athlete" | "guest" | string;
+  profile_id: string | null;
+  guest_id: string | null;
+  player_name: string;
+  matches_played: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  games_for: number;
+  games_against: number;
+  games_diff: number;
+  bonus_less_games: number;
+  adjusted_matches_played: number;
+  adjusted_games_for: number;
+  adjusted_games_diff: number;
 };
 
 type SeasonRankingRow = {
@@ -254,11 +275,13 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "error" | "off">("connecting");
+  const [stageViewMode, setStageViewMode] = useState<StageViewMode>("official");
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<{ profile_id: string; player_name: string } | null>(null);
 
   const [stageRows, setStageRows] = useState<StageRankingRow[]>([]);
+  const [stageClassificationRows, setStageClassificationRows] = useState<StageClassificationRow[]>([]);
   const [seasonRows, setSeasonRows] = useState<SeasonRankingRow[]>([]);
   const [pairRows, setPairRows] = useState<PairRankingRow[]>([]);
 
@@ -395,40 +418,152 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
 
         setPairRows(rows);
         setStageRows([]);
+        setStageClassificationRows([]);
         setSeasonRows([]);
       } else if (tab === "stage") {
         if (!stageId) throw new Error("Selecione uma etapa.");
 
-        const { data, error } = await supabase
-          .from("v_ranking_stage_players")
-          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,bonus_less_games,adjusted_matches_played,adjusted_games_diff,adjusted_games_for,age_years,position")
-          .eq("stage_id", stageId)
-          .eq("category", category)
-          .order("position", { ascending: true });
+        if (stageViewMode === "official") {
+          const { data, error } = await supabase
+            .from("v_ranking_stage_players")
+            .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,bonus_less_games,adjusted_matches_played,adjusted_games_diff,adjusted_games_for,age_years,position")
+            .eq("stage_id", stageId)
+            .eq("category", category)
+            .order("position", { ascending: true });
 
-        if (error) throw error;
+          if (error) throw error;
 
-        const rows: StageRankingRow[] = ((data ?? []) as any[]).map((r) => ({
-          pos: Number(r.position ?? 0) || 0,
-          profile_id: r.profile_id,
-          player_name: r.player_name,
-          matches_played: Number(r.matches_played ?? 0) || 0,
-          wins: Number(r.wins ?? 0) || 0,
-          losses: Number(r.losses ?? 0) || 0,
-          games_for: Number(r.games_for ?? 0) || 0,
-          games_against: Number(r.games_against ?? 0) || 0,
-          games_diff: Number(r.games_diff ?? 0) || 0,
-          bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
-          adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
-          adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
-          adjusted_games_for: Number(r.adjusted_games_for ?? r.games_for ?? 0) || 0,
-          age_years: r.age_years == null ? null : Number(r.age_years),
-          stage_points: (Number(r.wins ?? 0) || 0) * 10,
-        }));
+          const rows: StageRankingRow[] = ((data ?? []) as any[]).map((r) => ({
+            pos: Number(r.position ?? 0) || 0,
+            profile_id: r.profile_id,
+            player_name: r.player_name,
+            matches_played: Number(r.matches_played ?? 0) || 0,
+            wins: Number(r.wins ?? 0) || 0,
+            losses: Number(r.losses ?? 0) || 0,
+            games_for: Number(r.games_for ?? 0) || 0,
+            games_against: Number(r.games_against ?? 0) || 0,
+            games_diff: Number(r.games_diff ?? 0) || 0,
+            bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
+            adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
+            adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
+            adjusted_games_for: Number(r.adjusted_games_for ?? r.games_for ?? 0) || 0,
+            age_years: r.age_years == null ? null : Number(r.age_years),
+            stage_points: (Number(r.wins ?? 0) || 0) * 10,
+          }));
 
-        setStageRows(rows);
-        setPairRows([]);
-        setSeasonRows([]);
+          setStageRows(rows);
+          setStageClassificationRows([]);
+          setPairRows([]);
+          setSeasonRows([]);
+        } else {
+          const { data, error } = await supabase
+            .from("v_stage_classification_all")
+            .select("stage_id,category,position,roster_id,kind,profile_id,guest_id,player_name,matches_played,wins,losses,draws,games_for,games_against,games_diff")
+            .eq("stage_id", stageId)
+            .eq("category", category)
+            .order("position", { ascending: true });
+
+          if (error) throw error;
+
+          const baseRows = ((data ?? []) as any[]).map((r) => ({
+            pos: Number(r.position ?? 0) || 0,
+            roster_id: String(r.roster_id ?? ""),
+            kind: String(r.kind ?? "athlete"),
+            profile_id: r.profile_id ? String(r.profile_id) : null,
+            guest_id: r.guest_id ? String(r.guest_id) : null,
+            player_name: String(r.player_name ?? "—"),
+            matches_played: Number(r.matches_played ?? 0) || 0,
+            wins: Number(r.wins ?? 0) || 0,
+            losses: Number(r.losses ?? 0) || 0,
+            draws: Number(r.draws ?? 0) || 0,
+            games_for: Number(r.games_for ?? 0) || 0,
+            games_against: Number(r.games_against ?? 0) || 0,
+            games_diff: Number(r.games_diff ?? 0) || 0,
+          }));
+
+          const { data: roundModeRows, error: roundModeError } = await supabase
+            .from("rounds")
+            .select("id,mode")
+            .eq("stage_id", stageId);
+          if (roundModeError) throw roundModeError;
+
+          const roundIds = ((roundModeRows ?? []) as any[]).map((x) => x.id);
+          let modeRows: any[] = [];
+          if (roundIds.length > 0) {
+            const modeResp = await supabase
+              .from("round_groups")
+              .select("score_target, round_id")
+              .eq("cat_a", category)
+              .eq("cat_b", category)
+              .in("round_id", roundIds);
+            if (modeResp.error) throw modeResp.error;
+            modeRows = (modeResp.data ?? []) as any[];
+          }
+
+          const roundModeById = new Map<string, string>();
+          ((roundModeRows ?? []) as any[]).forEach((r) => {
+            roundModeById.set(String(r.id), String(r.mode ?? ""));
+          });
+
+          const categoryGroupRows = modeRows.filter((r: any) => roundModeById.has(String(r.round_id)));
+          const hasSpecialMode = categoryGroupRows.some((r: any) => {
+            const mode = roundModeById.get(String(r.round_id)) ?? "";
+            return mode === "americano" || mode === "americanocat";
+          });
+          const compensationPerMissingGame = categoryGroupRows.reduce((acc: number, r: any) => {
+            const scoreTarget = Number(r.score_target ?? 0) || 0;
+            return Math.max(acc, Math.floor(scoreTarget / 2));
+          }, 0);
+
+          const maxMatchesPlayed = baseRows.reduce((acc, r) => Math.max(acc, r.matches_played), 0);
+
+          const enrichedRows: StageClassificationRow[] = baseRows.map((r) => {
+            const missingGames = hasSpecialMode ? Math.max(maxMatchesPlayed - r.matches_played, 0) : 0;
+            const bonusLessGames = hasSpecialMode ? missingGames * compensationPerMissingGame : 0;
+            return {
+              ...r,
+              bonus_less_games: bonusLessGames,
+              adjusted_matches_played: r.matches_played + missingGames,
+              adjusted_games_for: r.games_for + bonusLessGames,
+              adjusted_games_diff: r.games_diff + bonusLessGames,
+            };
+          });
+
+          const rows: StageClassificationRow[] = [...enrichedRows]
+            .sort((a, b) => {
+              if (hasSpecialMode) {
+                if ((b.adjusted_games_for ?? b.games_for) !== (a.adjusted_games_for ?? a.games_for)) {
+                  return (b.adjusted_games_for ?? b.games_for) - (a.adjusted_games_for ?? a.games_for);
+                }
+                if (a.games_against !== b.games_against) {
+                  return a.games_against - b.games_against;
+                }
+                if (b.wins !== a.wins) {
+                  return b.wins - a.wins;
+                }
+                if (a.losses !== b.losses) {
+                  return a.losses - b.losses;
+                }
+                if ((b.adjusted_games_diff ?? b.games_diff) !== (a.adjusted_games_diff ?? a.games_diff)) {
+                  return (b.adjusted_games_diff ?? b.games_diff) - (a.adjusted_games_diff ?? a.games_diff);
+                }
+                return a.player_name.localeCompare(b.player_name, "pt-BR");
+              }
+
+              if (b.matches_played !== a.matches_played) return b.matches_played - a.matches_played;
+              if (b.wins !== a.wins) return b.wins - a.wins;
+              if (a.losses !== b.losses) return a.losses - b.losses;
+              if (b.games_diff !== a.games_diff) return b.games_diff - a.games_diff;
+              if (b.games_for !== a.games_for) return b.games_for - a.games_for;
+              return a.player_name.localeCompare(b.player_name, "pt-BR");
+            })
+            .map((r, idx) => ({ ...r, pos: idx + 1 }));
+
+          setStageClassificationRows(rows);
+          setStageRows([]);
+          setPairRows([]);
+          setSeasonRows([]);
+        }
       } else {
         if (!seasonId) throw new Error("Selecione uma temporada.");
 
@@ -452,10 +587,12 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
         setSeasonRows(rows);
         setPairRows([]);
         setStageRows([]);
+        setStageClassificationRows([]);
       }
     } catch (e: any) {
       setError(e?.message ?? "Falha ao carregar ranking.");
       setStageRows([]);
+      setStageClassificationRows([]);
       setSeasonRows([]);
       setPairRows([]);
     } finally {
@@ -486,14 +623,14 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
       if (t) clearTimeout(t);
       supabase.removeChannel(ch);
     };
-  }, [tab, seasonId, stageId, category]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, seasonId, stageId, category, stageViewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!me) return;
     if (!seasonId) return;
     if ((tab === "stage" || tab === "pairs") && !stageId) return;
     load();
-  }, [tab, category, seasonId, stageId, me]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, category, seasonId, stageId, me, stageViewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedSeason = useMemo(() => seasons.find((s) => s.id === seasonId), [seasons, seasonId]);
   const selectedStage = useMemo(() => stages.find((s) => s.id === stageId), [stages, stageId]);
@@ -676,10 +813,37 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
               </div>
             </div>
 
+            {tab === "stage" && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setStageViewMode("official")}
+                  className={classNames(
+                    "rounded-xl px-4 py-2 text-sm font-extrabold transition",
+                    stageViewMode === "official" ? "bg-[#1f2937] text-white" : "bg-[#0f172a] text-white/80 hover:bg-white/5"
+                  )}
+                >
+                  Ranking Oficial
+                </button>
+                <button
+                  onClick={() => setStageViewMode("final")}
+                  className={classNames(
+                    "rounded-xl px-4 py-2 text-sm font-extrabold transition",
+                    stageViewMode === "final" ? "bg-orange-500 text-white" : "bg-[#0f172a] text-white/80 hover:bg-white/5"
+                  )}
+                >
+                  Classificação Final
+                </button>
+              </div>
+            )}
+
             <div className="mt-4 flex items-center justify-between">
               <div className="text-xs text-white/50">
                 {tab === "pairs"
                   ? "Desempate: vitórias → saldo games → games pró → confronto direto (empate de 2) → soma das idades."
+                  : tab === "stage"
+                  ? stageViewMode === "official"
+                    ? "Ranking Oficial: somente atletas. Compensação e saldo ajustado seguem a regra do americano/americanocat."
+                    : "Classificação Final: atletas + convidados. Ordem usa GP ajustado, menor GC, vitórias, derrotas e saldo ajustado quando houver americano/americanocat."
                   : "Desempate: saldo games → games pró → confronto direto (empate de 2) → idade."}
               </div>
 
@@ -745,7 +909,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
             )}
 
             <div className="border-b border-white/10 px-4 py-3 text-sm font-extrabold">
-              {tab === "pairs" ? "Classificação das Duplas da Etapa" : tab === "stage" ? "Tabela da Etapa" : "Ranking da Temporada"}
+              {tab === "pairs" ? "Classificação das Duplas da Etapa" : tab === "stage" ? (stageViewMode === "official" ? "Ranking Oficial da Etapa" : "Classificação Final da Etapa") : "Ranking da Temporada"}
             </div>
 
             <div className="overflow-auto">
@@ -800,6 +964,7 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                   </tbody>
                 </table>
               ) : tab === "stage" ? (
+                stageViewMode === "official" ? (
                 <table className="min-w-[1120px] w-full text-left">
                   <thead className="bg-[#0f172a] text-xs font-bold text-white/60">
                     <tr className="border-b border-white/10">
@@ -880,6 +1045,75 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
                     ))}
                   </tbody>
                 </table>
+                ) : (
+                <table className="min-w-[1120px] w-full text-left">
+                  <thead className="bg-[#0f172a] text-xs font-bold text-white/60">
+                    <tr className="border-b border-white/10">
+                      <th className="px-4 py-3">POS</th>
+                      <th className="px-4 py-3">PARTICIPANTE</th>
+                      <th className="px-4 py-3">TIPO</th>
+                      <th className="px-4 py-3">J</th>
+                      <th className="px-4 py-3">V</th>
+                      <th className="px-4 py-3">D</th>
+                      <th className="px-4 py-3">E</th>
+                      <th className="px-4 py-3">GP</th>
+                      <th className="px-4 py-3">GC</th>
+                      <th className="px-4 py-3">SALDO</th>
+                      <th className="px-4 py-3">COMP.</th>
+                      <th className="px-4 py-3">J. AJUST.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!loading && stageClassificationRows.length === 0 && (
+                      <tr>
+                        <td colSpan={12} className="px-4 py-10 text-center text-sm text-white/60">
+                          Sem dados para esta classificação final (verifique se há jogos <b>played</b>).
+                        </td>
+                      </tr>
+                    )}
+
+                    {stageClassificationRows.map((r) => (
+                      <tr
+                        key={r.roster_id}
+                        className={classNames("rk-fade", topRowTone(r.pos), "ring-1")}
+                        style={{ animationDelay: `${Math.min(r.pos, 12) * 10}ms` }}
+                      >
+                        <td className="px-4 py-3">
+                          <span className="inline-flex h-8 min-w-10 items-center justify-center gap-1 rounded-xl bg-[#1f2937] px-2 text-sm font-extrabold text-white ring-1 ring-white/10">
+                            {medalForPos(r.pos) && <span className="text-base leading-none">{medalForPos(r.pos)}</span>}
+                            <span>{r.pos}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-extrabold">
+                          <div className="font-extrabold text-white">{r.player_name}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={classNames("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-extrabold ring-1", r.kind === "guest" ? "bg-orange-500/15 text-orange-200 ring-orange-500/25" : "bg-emerald-500/15 text-emerald-200 ring-emerald-500/25")}>
+                            {r.kind === "guest" ? "Convidado" : "Atleta"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-bold">{r.matches_played}</td>
+                        <td className="px-4 py-3 font-extrabold text-emerald-200">{r.wins}</td>
+                        <td className="px-4 py-3 font-extrabold text-orange-200">{r.losses}</td>
+                        <td className="px-4 py-3 font-bold">{r.draws}</td>
+                        <td className="px-4 py-3 font-bold">{r.adjusted_games_for}</td>
+                        <td className="px-4 py-3 font-bold">{r.games_against}</td>
+                        <td className="px-4 py-3 font-extrabold">{r.adjusted_games_diff >= 0 ? `+${r.adjusted_games_diff}` : r.adjusted_games_diff}</td>
+                        <td className="px-4 py-3">
+                          {r.bonus_less_games > 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-sky-500/15 px-2.5 py-1 text-xs font-extrabold text-sky-200 ring-1 ring-sky-500/25">
+                              +{r.bonus_less_games}
+                            </span>
+                          ) : (
+                            <span className="text-white/40">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-extrabold">{r.adjusted_matches_played}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                )
               ) : (
                 <table className="min-w-[760px] w-full text-left">
                   <thead className="bg-[#0f172a] text-xs font-bold text-white/60">
@@ -926,6 +1160,8 @@ export default function RankingPublic({ embedded = false }: { embedded?: boolean
             <div className="border-t border-white/10 px-4 py-3 text-xs text-white/50">
               {tab === "pairs"
                 ? <>* Ranking por dupla da etapa. Jogos considerados: status <b>played</b>.</>
+                : tab === "stage" && stageViewMode === "final"
+                ? <>* Classificação Final usa a view <b>v_stage_classification_all</b> e mostra <b>atletas + convidados</b>, sem afetar pontos nem ranking oficial. As colunas <b>Comp.</b> e <b>J. Ajust.</b> são informativas.</>
                 : <>* Ranking somente por atleta. Jogos considerados: status <b>played</b>.</>}
             </div>
           </div>

@@ -6,6 +6,7 @@ type SeasonRow = { id: string; name: string | null; created_at?: string | null }
 type StageRow = { id: number; name: string | null; season_id: string | null; status: string | null };
 
 type TabKey = "pairs" | "stage" | "season";
+type StageViewMode = "official" | "final";
 type Category = "A" | "B" | "C" | "D";
 
 type StageRankingRow = {
@@ -24,6 +25,26 @@ type StageRankingRow = {
   adjusted_matches_played: number;
   adjusted_games_diff: number;
   adjusted_games_for: number;
+};
+
+type StageClassificationRow = {
+  pos: number;
+  roster_id: string;
+  kind: "athlete" | "guest" | string;
+  profile_id: string | null;
+  guest_id: string | null;
+  player_name: string;
+  matches_played: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  games_for: number;
+  games_against: number;
+  games_diff: number;
+  bonus_less_games: number;
+  adjusted_matches_played: number;
+  adjusted_games_for: number;
+  adjusted_games_diff: number;
 };
 
 type SeasonRankingRow = {
@@ -275,6 +296,7 @@ function PlayerDetailsModal({
 export default function AdminRanking() {
   const [tab, setTab] = useState<TabKey>("pairs");
   const [category, setCategory] = useState<Category>("A");
+  const [stageViewMode, setStageViewMode] = useState<StageViewMode>("official");
 
   const [seasons, setSeasons] = useState<SeasonRow[]>([]);
   const [stages, setStages] = useState<StageRow[]>([]);
@@ -289,6 +311,7 @@ export default function AdminRanking() {
   const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "error" | "off">("connecting");
 
   const [stageRows, setStageRows] = useState<StageRankingRow[]>([]);
+  const [stageClassificationRows, setStageClassificationRows] = useState<StageClassificationRow[]>([]);
   const [seasonRows, setSeasonRows] = useState<SeasonRankingRow[]>([]);
   const [pairRows, setPairRows] = useState<PairRankingRow[]>([]);
 
@@ -535,34 +558,165 @@ export default function AdminRanking() {
       } else if (tab === "stage") {
         if (!stageId) throw new Error("Selecione uma etapa.");
 
-        const { data, error } = await supabase
-          .from("v_ranking_stage_players")
-          .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,age_years,position,bonus_less_games,adjusted_matches_played,adjusted_games_diff,adjusted_games_for")
-          .eq("stage_id", stageId)
-          .eq("category", category)
-          .order("position", { ascending: true });
+        if (stageViewMode === "official") {
+          const { data, error } = await supabase
+            .from("v_ranking_stage_players")
+            .select("stage_id,category,profile_id,player_name,matches_played,wins,losses,games_for,games_against,games_diff,age_years,position,bonus_less_games,adjusted_matches_played,adjusted_games_diff,adjusted_games_for")
+            .eq("stage_id", stageId)
+            .eq("category", category)
+            .order("position", { ascending: true });
 
-        if (error) throw error;
+          if (error) throw error;
 
-        const rows: StageRankingRow[] = ((data ?? []) as any[]).map((r) => ({
-          pos: Number(r.position ?? 0) || 0,
-          profile_id: r.profile_id,
-          player_name: r.player_name,
-          matches_played: Number(r.matches_played ?? 0) || 0,
-          wins: Number(r.wins ?? 0) || 0,
-          losses: Number(r.losses ?? 0) || 0,
-          games_for: Number(r.games_for ?? 0) || 0,
-          games_against: Number(r.games_against ?? 0) || 0,
-          games_diff: Number(r.games_diff ?? 0) || 0,
-          age_years: r.age_years == null ? null : Number(r.age_years),
-          stage_points: (Number(r.wins ?? 0) || 0) * 10,
-          bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
-          adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
-          adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
-          adjusted_games_for: Number(r.adjusted_games_for ?? r.games_for ?? 0) || 0,
-        }));
+          const rows: StageRankingRow[] = ((data ?? []) as any[]).map((r) => ({
+            pos: Number(r.position ?? 0) || 0,
+            profile_id: r.profile_id,
+            player_name: r.player_name,
+            matches_played: Number(r.matches_played ?? 0) || 0,
+            wins: Number(r.wins ?? 0) || 0,
+            losses: Number(r.losses ?? 0) || 0,
+            games_for: Number(r.games_for ?? 0) || 0,
+            games_against: Number(r.games_against ?? 0) || 0,
+            games_diff: Number(r.games_diff ?? 0) || 0,
+            age_years: r.age_years == null ? null : Number(r.age_years),
+            stage_points: (Number(r.wins ?? 0) || 0) * 10,
+            bonus_less_games: Number(r.bonus_less_games ?? 0) || 0,
+            adjusted_matches_played: Number(r.adjusted_matches_played ?? r.matches_played ?? 0) || 0,
+            adjusted_games_diff: Number(r.adjusted_games_diff ?? r.games_diff ?? 0) || 0,
+            adjusted_games_for: Number(r.adjusted_games_for ?? r.games_for ?? 0) || 0,
+          }));
 
-        setStageRows(rows);
+          setStageRows(rows);
+          setStageClassificationRows([]);
+        } else {
+          const { data, error } = await supabase
+            .from("v_stage_classification_all")
+            .select("stage_id,category,position,roster_id,kind,profile_id,guest_id,player_name,matches_played,wins,losses,draws,games_for,games_against,games_diff")
+            .eq("stage_id", stageId)
+            .eq("category", category)
+            .order("position", { ascending: true });
+
+          if (error) throw error;
+
+          const baseRows = ((data ?? []) as any[]).map((r) => ({
+            pos: Number(r.position ?? 0) || 0,
+            roster_id: String(r.roster_id ?? ""),
+            kind: String(r.kind ?? "athlete"),
+            profile_id: r.profile_id ? String(r.profile_id) : null,
+            guest_id: r.guest_id ? String(r.guest_id) : null,
+            player_name: String(r.player_name ?? "—"),
+            matches_played: Number(r.matches_played ?? 0) || 0,
+            wins: Number(r.wins ?? 0) || 0,
+            losses: Number(r.losses ?? 0) || 0,
+            draws: Number(r.draws ?? 0) || 0,
+            games_for: Number(r.games_for ?? 0) || 0,
+            games_against: Number(r.games_against ?? 0) || 0,
+            games_diff: Number(r.games_diff ?? 0) || 0,
+          }));
+
+          let compensationPerMissingGame = 0;
+          let hasSpecialMode = false;
+          const { data: modeRows, error: modeError } = await supabase
+            .from("round_groups")
+            .select("score_target, round_id")
+            .eq("cat_a", category)
+            .eq("cat_b", category)
+            .in(
+              "round_id",
+              (
+                (
+                  await supabase
+                    .from("rounds")
+                    .select("id,mode")
+                    .eq("stage_id", stageId)
+                ).data ?? []
+              ).map((x: any) => x.id)
+            );
+
+          const { data: roundModeRows, error: roundModeError } = await supabase
+            .from("rounds")
+            .select("id,mode")
+            .eq("stage_id", stageId);
+
+          if (roundModeError) throw roundModeError;
+          if (modeError) throw modeError;
+
+          const roundModeById = new Map<string, string>();
+          (roundModeRows ?? []).forEach((r: any) => {
+            roundModeById.set(String(r.id), String(r.mode ?? ""));
+          });
+
+          const categoryGroupRows = (modeRows ?? []).filter((r: any) => roundModeById.has(String(r.round_id)));
+          hasSpecialMode = categoryGroupRows.some((r: any) => {
+            const mode = roundModeById.get(String(r.round_id)) ?? "";
+            return mode === "americano" || mode === "americanocat";
+          });
+          compensationPerMissingGame = categoryGroupRows.reduce((acc: number, r: any) => {
+            const scoreTarget = Number(r.score_target ?? 0) || 0;
+            return Math.max(acc, Math.floor(scoreTarget / 2));
+          }, 0);
+
+          const maxMatchesPlayed = baseRows.reduce((acc, r) => Math.max(acc, r.matches_played), 0);
+
+          const enrichedRows: StageClassificationRow[] = baseRows.map((r) => {
+            const missingGames = hasSpecialMode ? Math.max(maxMatchesPlayed - r.matches_played, 0) : 0;
+            const bonusLessGames = hasSpecialMode ? missingGames * compensationPerMissingGame : 0;
+            return {
+              ...r,
+              bonus_less_games: bonusLessGames,
+              adjusted_matches_played: r.matches_played + missingGames,
+              adjusted_games_for: r.games_for + bonusLessGames,
+              adjusted_games_diff: r.games_diff + bonusLessGames,
+            };
+          });
+
+          const rows: StageClassificationRow[] = [...enrichedRows]
+            .sort((a, b) => {
+              if (hasSpecialMode) {
+                if ((b.adjusted_games_for ?? b.games_for) !== (a.adjusted_games_for ?? a.games_for)) {
+                  return (b.adjusted_games_for ?? b.games_for) - (a.adjusted_games_for ?? a.games_for);
+                }
+                if (a.games_against !== b.games_against) {
+                  return a.games_against - b.games_against;
+                }
+                if (b.wins !== a.wins) {
+                  return b.wins - a.wins;
+                }
+                if (a.losses !== b.losses) {
+                  return a.losses - b.losses;
+                }
+                if ((b.adjusted_games_diff ?? b.games_diff) !== (a.adjusted_games_diff ?? a.games_diff)) {
+                  return (b.adjusted_games_diff ?? b.games_diff) - (a.adjusted_games_diff ?? a.games_diff);
+                }
+                return a.player_name.localeCompare(b.player_name, 'pt-BR');
+              }
+
+              if (b.matches_played !== a.matches_played) {
+                return b.matches_played - a.matches_played;
+              }
+              if (b.wins !== a.wins) {
+                return b.wins - a.wins;
+              }
+              if (a.losses !== b.losses) {
+                return a.losses - b.losses;
+              }
+              if (b.games_diff !== a.games_diff) {
+                return b.games_diff - a.games_diff;
+              }
+              if (b.games_for !== a.games_for) {
+                return b.games_for - a.games_for;
+              }
+              return a.player_name.localeCompare(b.player_name, 'pt-BR');
+            })
+            .map((r, idx) => ({
+              ...r,
+              pos: idx + 1,
+            }));
+
+          setStageClassificationRows(rows);
+          setStageRows([]);
+        }
+
         setPairRows([]);
         setSeasonRows([]);
       } else {
@@ -638,7 +792,7 @@ export default function AdminRanking() {
       if (t) clearTimeout(t);
       supabase.removeChannel(ch);
     };
-  }, [tab, seasonId, stageId, category]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, seasonId, stageId, category, stageViewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!seasonId) return;
@@ -669,12 +823,24 @@ export default function AdminRanking() {
     }
 
     if (tab === "stage") {
-      if (!stageRows.length) return null;
-      const totalMatches = stageRows.reduce((acc, r) => acc + (r.matches_played ?? 0), 0);
-      const totalBonus = stageRows.reduce((acc, r) => acc + (r.bonus_less_games ?? 0), 0);
+      if (stageViewMode === "official") {
+        if (!stageRows.length) return null;
+        const totalMatches = stageRows.reduce((acc, r) => acc + (r.matches_played ?? 0), 0);
+        const totalBonus = stageRows.reduce((acc, r) => acc + (r.bonus_less_games ?? 0), 0);
+        return [
+          { label: "Atletas ranqueados", value: stageRows.length },
+          { label: "Jogos (somado por atleta)", value: totalMatches },
+          { label: "Compensação total", value: totalBonus },
+        ];
+      }
+
+      if (!stageClassificationRows.length) return null;
+      const totalMatches = stageClassificationRows.reduce((acc, r) => acc + (r.matches_played ?? 0), 0);
+      const totalGuests = stageClassificationRows.filter((r) => r.kind === "guest").length;
+      const totalBonus = stageClassificationRows.reduce((acc, r) => acc + (r.bonus_less_games ?? 0), 0);
       return [
-        { label: "Atletas ranqueados", value: stageRows.length },
-        { label: "Jogos (somado por atleta)", value: totalMatches },
+        { label: "Participantes classificados", value: stageClassificationRows.length },
+        { label: "Convidados na classificação", value: totalGuests },
         { label: "Compensação total", value: totalBonus },
       ];
     }
@@ -685,7 +851,7 @@ export default function AdminRanking() {
       { label: "Atletas ranqueados", value: seasonRows.length },
       { label: "Pontos totais (categoria)", value: totalPts },
     ];
-  }, [tab, pairRows, stageRows, seasonRows]);
+  }, [tab, pairRows, stageRows, stageClassificationRows, seasonRows, stageViewMode]);
 
   const contextLine = useMemo(() => {
     const seasonName = selectedSeason?.name ?? "Temporada";
@@ -715,7 +881,9 @@ export default function AdminRanking() {
                   {tab === "pairs"
                     ? "Classificação oficial por dupla da etapa"
                     : tab === "stage"
-                    ? "Ranking por etapa (saldo games, games pró, confronto direto (empate de 2), idade)"
+                    ? stageViewMode === "official"
+                      ? "Ranking Oficial da etapa (somente atletas)"
+                      : "Classificação Final da etapa (atletas + convidados, sem afetar o ranking oficial)"
                     : "Ranking geral por temporada (soma pontos das etapas)"}
                 </p>
               </div>
@@ -859,6 +1027,31 @@ export default function AdminRanking() {
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/60">
             <span className="font-semibold text-white/80">{contextLine}</span>
           </div>
+
+          {tab === "stage" && (
+            <div className="mt-4 overflow-x-auto">
+              <div className="inline-flex min-w-max rounded-2xl bg-white/10 p-1 ring-1 ring-white/10">
+                <button
+                  className={classNames(
+                    "rounded-2xl px-4 py-2 text-sm font-bold transition whitespace-nowrap",
+                    stageViewMode === "official" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
+                  )}
+                  onClick={() => setStageViewMode("official")}
+                >
+                  Ranking Oficial
+                </button>
+                <button
+                  className={classNames(
+                    "rounded-2xl px-4 py-2 text-sm font-bold transition whitespace-nowrap",
+                    stageViewMode === "final" ? "bg-[#1f2937] text-white shadow-sm" : "text-white/80 hover:bg-white/10"
+                  )}
+                  onClick={() => setStageViewMode("final")}
+                >
+                  Classificação Final
+                </button>
+              </div>
+            </div>
+          )}
 
           {topStats && (
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
@@ -1022,7 +1215,7 @@ export default function AdminRanking() {
           <div className="border-b border-white/10 px-4 py-3 no-print">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm font-bold text-white">
-                {tab === "pairs" ? "Classificação das Duplas da Etapa" : tab === "stage" ? "Tabela da Etapa" : "Ranking da Temporada"}
+                {tab === "pairs" ? "Classificação das Duplas da Etapa" : tab === "stage" ? (stageViewMode === "official" ? "Ranking Oficial da Etapa" : "Classificação Final da Etapa") : "Ranking da Temporada"}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1114,104 +1307,165 @@ export default function AdminRanking() {
                 </tbody>
               </table>
             ) : tab === "stage" ? (
-              <table className="min-w-[1060px] w-full text-left">
-                <thead className="sticky top-0 z-10 bg-[#0f172a]">
-                  <tr className="border-b border-white/10 text-xs font-bold uppercase tracking-wide text-white/60">
-                    <th className="px-4 py-3">Pos</th>
-                    <th className="px-4 py-3">Atleta</th>
-                    <th className="px-3 py-3">J</th>
-                    <th className="px-3 py-3">V</th>
-                    <th className="px-3 py-3">D</th>
-                    <th className="px-3 py-3">E</th>
-                    <th className="px-3 py-3">GP</th>
-                    <th className="px-3 py-3">GC</th>
-                    <th className="px-3 py-3">Saldo</th>
-                    <th className="px-3 py-3">Comp.</th>
-                    <th className="px-3 py-3">J. Ajust.</th>
-                    <th className="px-3 py-3">Idade</th>
-                    <th className="px-3 py-3 whitespace-nowrap">Pts Etapa</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-white/10">
-                  {loadingData && stageRows.length === 0 && (
-                    <>
-                      <SkeletonRow cols={13} />
-                      <SkeletonRow cols={13} />
-                      <SkeletonRow cols={13} />
-                    </>
-                  )}
-
-                  {!loadingData && stageRows.length === 0 && (
-                    <tr>
-                      <td colSpan={13} className="px-4 py-10 text-center text-sm text-white/60">
-                        Nenhum dado para esta categoria/etapa (verifique se há jogos <b>played</b>).
-                      </td>
+              stageViewMode === "official" ? (
+                <table className="min-w-[1060px] w-full text-left">
+                  <thead className="sticky top-0 z-10 bg-[#0f172a]">
+                    <tr className="border-b border-white/10 text-xs font-bold uppercase tracking-wide text-white/60">
+                      <th className="px-4 py-3">Pos</th>
+                      <th className="px-4 py-3">Atleta</th>
+                      <th className="px-3 py-3">J</th>
+                      <th className="px-3 py-3">V</th>
+                      <th className="px-3 py-3">D</th>
+                      <th className="px-3 py-3">E</th>
+                      <th className="px-3 py-3">GP</th>
+                      <th className="px-3 py-3">GC</th>
+                      <th className="px-3 py-3">Saldo</th>
+                      <th className="px-3 py-3">Comp.</th>
+                      <th className="px-3 py-3">J. Ajust.</th>
+                      <th className="px-3 py-3">Comp.</th>
+                      <th className="px-3 py-3">J. Ajust.</th>
+                      <th className="px-3 py-3">Idade</th>
+                      <th className="px-3 py-3 whitespace-nowrap">Pts Etapa</th>
                     </tr>
-                  )}
+                  </thead>
 
-                  {stageRows.map((r) => (
-                    <tr
-                      key={r.profile_id}
-                      className="hover:bg-white/5 cursor-pointer"
-                      onClick={() => {
-                        setSelectedPlayer({ profile_id: r.profile_id, player_name: r.player_name });
-                        setDetailsOpen(true);
-                      }}
-                    >
-                      <td className="px-3 py-3">
-                        <span className="inline-flex h-8 w-10 items-center justify-center rounded-2xl bg-[#1f2937] text-sm font-extrabold text-white">
-                          {r.pos}
-                        </span>
-                      </td>
+                  <tbody className="divide-y divide-white/10">
+                    {loadingData && stageRows.length === 0 && (
+                      <>
+                        <SkeletonRow cols={13} />
+                        <SkeletonRow cols={13} />
+                        <SkeletonRow cols={13} />
+                      </>
+                    )}
 
-                      <td className="px-3 py-3">
-                        <div className="font-extrabold text-white">{r.player_name}</div>
-                        <div className="mt-0.5 hidden xl:block text-xs text-white/60">{r.profile_id}</div>
-                      </td>
+                    {!loadingData && stageRows.length === 0 && (
+                      <tr>
+                        <td colSpan={13} className="px-4 py-10 text-center text-sm text-white/60">
+                          Nenhum dado para esta categoria/etapa (verifique se há jogos <b>played</b>).
+                        </td>
+                      </tr>
+                    )}
 
-                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.matches_played}</td>
-
-                      <td className="px-3 py-3">
-                        <Badge tone="success">{r.wins}</Badge>
-                      </td>
-
-                      <td className="px-3 py-3">
-                        <Badge tone="warning">{r.losses}</Badge>
-                      </td>
-
-                      <td className="px-3 py-3 text-sm font-bold text-white/80">{calcDraws(r.matches_played, r.wins, r.losses)}</td>
-
-                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_games_for ?? r.games_for}</td>
-                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
-
-                      <td className="px-3 py-3">
-                        <span className="text-sm font-extrabold text-white/90">{(r.adjusted_games_diff ?? r.games_diff ?? 0) >= 0 ? `+${r.adjusted_games_diff ?? r.games_diff ?? 0}` : (r.adjusted_games_diff ?? r.games_diff ?? 0)}</span>
-                      </td>
-
-                      <td className="px-3 py-3">
-                        {r.bonus_less_games > 0 ? (
-                          <span className="inline-flex items-center rounded-2xl bg-sky-500/15 px-3 py-2 text-sm font-extrabold text-sky-200 ring-1 ring-sky-500/25">
-                            +{r.bonus_less_games}
+                    {stageRows.map((r) => (
+                      <tr
+                        key={r.profile_id}
+                        className="hover:bg-white/5 cursor-pointer"
+                        onClick={() => {
+                          setSelectedPlayer({ profile_id: r.profile_id, player_name: r.player_name });
+                          setDetailsOpen(true);
+                        }}
+                      >
+                        <td className="px-3 py-3">
+                          <span className="inline-flex h-8 w-10 items-center justify-center rounded-2xl bg-[#1f2937] text-sm font-extrabold text-white">
+                            {r.pos}
                           </span>
-                        ) : (
-                          <span className="text-sm font-bold text-white/40">—</span>
-                        )}
-                      </td>
+                        </td>
 
-                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_matches_played}</td>
+                        <td className="px-3 py-3">
+                          <div className="font-extrabold text-white">{r.player_name}</div>
+                          <div className="mt-0.5 hidden xl:block text-xs text-white/60">{r.profile_id}</div>
+                        </td>
 
-                      <td className="px-3 py-3 text-sm font-bold text-white/80">{r.age_years ?? "-"}</td>
-
-                      <td className="px-3 py-3">
-                        <span className="inline-flex items-center rounded-2xl bg-orange-500 px-3 py-2 text-sm font-extrabold text-white shadow-sm">
-                          {r.stage_points}
-                        </span>
-                      </td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.matches_played}</td>
+                        <td className="px-3 py-3"><Badge tone="success">{r.wins}</Badge></td>
+                        <td className="px-3 py-3"><Badge tone="warning">{r.losses}</Badge></td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{calcDraws(r.matches_played, r.wins, r.losses)}</td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_games_for ?? r.games_for}</td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
+                        <td className="px-3 py-3"><span className="text-sm font-extrabold text-white/90">{(r.adjusted_games_diff ?? r.games_diff ?? 0) >= 0 ? `+${r.adjusted_games_diff ?? r.games_diff ?? 0}` : (r.adjusted_games_diff ?? r.games_diff ?? 0)}</span></td>
+                        <td className="px-3 py-3">
+                          {r.bonus_less_games > 0 ? (
+                            <span className="inline-flex items-center rounded-2xl bg-sky-500/15 px-3 py-2 text-sm font-extrabold text-sky-200 ring-1 ring-sky-500/25">
+                              +{r.bonus_less_games}
+                            </span>
+                          ) : (
+                            <span className="text-sm font-bold text-white/40">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_matches_played}</td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.age_years ?? "-"}</td>
+                        <td className="px-3 py-3">
+                          <span className="inline-flex items-center rounded-2xl bg-orange-500 px-3 py-2 text-sm font-extrabold text-white shadow-sm">
+                            {r.stage_points}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="min-w-[980px] w-full text-left">
+                  <thead className="sticky top-0 z-10 bg-[#0f172a]">
+                    <tr className="border-b border-white/10 text-xs font-bold uppercase tracking-wide text-white/60">
+                      <th className="px-4 py-3">Pos</th>
+                      <th className="px-4 py-3">Participante</th>
+                      <th className="px-3 py-3">Tipo</th>
+                      <th className="px-3 py-3">J</th>
+                      <th className="px-3 py-3">V</th>
+                      <th className="px-3 py-3">D</th>
+                      <th className="px-3 py-3">E</th>
+                      <th className="px-3 py-3">GP</th>
+                      <th className="px-3 py-3">GC</th>
+                      <th className="px-3 py-3">Saldo</th>
+                      <th className="px-3 py-3">Comp.</th>
+                      <th className="px-3 py-3">J. Ajust.</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {loadingData && stageClassificationRows.length === 0 && (
+                      <>
+                        <SkeletonRow cols={12} />
+                        <SkeletonRow cols={12} />
+                        <SkeletonRow cols={12} />
+                      </>
+                    )}
+
+                    {!loadingData && stageClassificationRows.length === 0 && (
+                      <tr>
+                        <td colSpan={12} className="px-4 py-10 text-center text-sm text-white/60">
+                          Nenhum dado para esta classificação final (verifique se há jogos <b>played</b>).
+                        </td>
+                      </tr>
+                    )}
+
+                    {stageClassificationRows.map((r) => (
+                      <tr key={r.roster_id} className="hover:bg-white/5">
+                        <td className="px-3 py-3">
+                          <span className="inline-flex h-8 w-10 items-center justify-center rounded-2xl bg-[#1f2937] text-sm font-extrabold text-white">
+                            {r.pos}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="font-extrabold text-white">{r.player_name}</div>
+                          <div className="mt-0.5 hidden xl:block text-xs text-white/60">{r.kind === "guest" ? (r.guest_id ?? r.roster_id) : (r.profile_id ?? r.roster_id)}</div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <Badge tone={r.kind === "guest" ? "warning" : "success"}>
+                            {r.kind === "guest" ? "Convidado" : "Atleta"}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.matches_played}</td>
+                        <td className="px-3 py-3"><Badge tone="success">{r.wins}</Badge></td>
+                        <td className="px-3 py-3"><Badge tone="warning">{r.losses}</Badge></td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.draws}</td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_games_for}</td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.games_against}</td>
+                        <td className="px-3 py-3"><span className="text-sm font-extrabold text-white/90">{r.adjusted_games_diff >= 0 ? `+${r.adjusted_games_diff}` : r.adjusted_games_diff}</span></td>
+                        <td className="px-3 py-3">
+                          {r.bonus_less_games > 0 ? (
+                            <span className="inline-flex items-center rounded-2xl bg-sky-500/15 px-3 py-2 text-sm font-extrabold text-sky-200 ring-1 ring-sky-500/25">
+                              +{r.bonus_less_games}
+                            </span>
+                          ) : (
+                            <span className="text-sm font-bold text-white/40">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-sm font-bold text-white/80">{r.adjusted_matches_played}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
             ) : (
               <table className="min-w-[860px] w-full text-left">
                 <thead className="sticky top-0 z-10 bg-[#0f172a]">
@@ -1268,6 +1522,10 @@ export default function AdminRanking() {
             {tab === "pairs" ? (
               <>
                 AdminRanking usa a view <b>v_ranking_stage_pairs</b>. Jogos considerados: <b>played</b>. O pódio oficial só aparece com etapa <b>finished</b>.
+              </>
+            ) : tab === "stage" && stageViewMode === "final" ? (
+              <>
+                Classificação Final usa a view <b>v_stage_classification_all</b> e mostra <b>atletas + convidados</b>, sem afetar pontos nem ranking oficial. As colunas <b>Comp.</b> e <b>J. Ajust.</b> são informativas.
               </>
             ) : (
               <>

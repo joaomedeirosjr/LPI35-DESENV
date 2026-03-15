@@ -29,6 +29,7 @@ type GroupRow = {
   court_from: number | null
   court_to: number | null
   score_target?: number | null
+  schedule_mode?: "auto" | "manual" | string | null
 }
 
 type MatchRow = {
@@ -83,6 +84,38 @@ type ManualDraft = {
   leftRosterId: string
   rightRosterId: string
 }
+
+type ManualMatchDraftRow = {
+  id: string
+  court_no: number
+  slot_no: number
+  team1_player1_roster_id: string
+  team1_player2_roster_id: string
+  team2_player1_roster_id: string
+  team2_player2_roster_id: string
+}
+
+type ManualSavedMatchRow = {
+  match_id: string
+  round_id: string
+  group_id: string
+  court_no: number | null
+  slot_no: number | null
+  status: string | null
+  score: any | null
+  team1_player1_roster_id: string | null
+  team1_player2_roster_id: string | null
+  team2_player1_roster_id: string | null
+  team2_player2_roster_id: string | null
+  team1_label: string | null
+  team2_label: string | null
+}
+
+type ManualRosterField =
+  | "team1_player1_roster_id"
+  | "team1_player2_roster_id"
+  | "team2_player1_roster_id"
+  | "team2_player2_roster_id"
 
 type GenCounts = {
   a: number
@@ -272,6 +305,11 @@ export default function AdminRounds() {
   const [manualDrafts, setManualDrafts] = useState<Record<string, ManualDraft>>({})
   const [manualLoading, setManualLoading] = useState<Record<string, boolean>>({})
   const [groupAudit, setGroupAudit] = useState<Record<string, GroupAudit>>({})
+  const [manualMatchRows, setManualMatchRows] = useState<Record<string, ManualMatchDraftRow[]>>({})
+  const [manualSavedMatches, setManualSavedMatches] = useState<Record<string, ManualSavedMatchRow[]>>({})
+  const [manualMatchLoading, setManualMatchLoading] = useState<Record<string, boolean>>({})
+  const [manualMatchSaving, setManualMatchSaving] = useState<Record<string, boolean>>({})
+  const [activeManualRowByGroup, setActiveManualRowByGroup] = useState<Record<string, string>>({})
   const [auditLoading, setAuditLoading] = useState<Record<string, boolean>>({})
 
   const stageStatus = useMemo(() => {
@@ -1391,6 +1429,361 @@ export default function AdminRounds() {
     setManualDrafts((prev) => ({ ...prev, [groupId]: { leftRosterId: "", rightRosterId: "" } }))
   }
 
+
+  function getGroupScheduleMode(g: GroupRow): "auto" | "manual" {
+    return String(g.schedule_mode ?? "auto") === "manual" ? "manual" : "auto"
+  }
+
+  function makeManualMatchRow(groupId: string, rows?: ManualMatchDraftRow[]): ManualMatchDraftRow {
+    const current = rows ?? (manualMatchRows[groupId] ?? [])
+    const g = groups.find((x) => x.id === groupId)
+    let maxSlot = 0
+    for (const r of current) maxSlot = Math.max(maxSlot, Number(r.slot_no ?? 0))
+    return {
+      id: `${groupId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      court_no: Number(g?.court_from ?? 1),
+      slot_no: maxSlot + 1,
+      team1_player1_roster_id: "",
+      team1_player2_roster_id: "",
+      team2_player1_roster_id: "",
+      team2_player2_roster_id: "",
+    }
+  }
+
+  function getManualMatchRows(groupId: string): ManualMatchDraftRow[] {
+    return manualMatchRows[groupId] ?? []
+  }
+
+  function getManualSavedRows(groupId: string): ManualSavedMatchRow[] {
+    return manualSavedMatches[groupId] ?? []
+  }
+
+  function addManualMatchRow(groupId: string) {
+    setManualMatchRows((prev) => {
+      const rows = prev[groupId] ?? []
+      const nextRow = makeManualMatchRow(groupId, rows)
+      setActiveManualRowByGroup((active) => ({ ...active, [groupId]: nextRow.id }))
+      return { ...prev, [groupId]: [...rows, nextRow] }
+    })
+  }
+
+  function removeManualMatchRow(groupId: string, rowId: string) {
+    setManualMatchRows((prev) => ({ ...prev, [groupId]: getManualMatchRows(groupId).filter((r) => r.id !== rowId) }))
+    setActiveManualRowByGroup((prev) => {
+      if (prev[groupId] !== rowId) return prev
+      const next = getManualMatchRows(groupId).filter((r) => r.id !== rowId)[0]
+      return { ...prev, [groupId]: next?.id ?? "" }
+    })
+  }
+
+  function updateManualMatchRow(
+    groupId: string,
+    rowId: string,
+    field: keyof ManualMatchDraftRow,
+    value: string | number,
+  ) {
+    setManualMatchRows((prev) => ({
+      ...prev,
+      [groupId]: getManualMatchRows(groupId).map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              [field]: field === "court_no" || field === "slot_no" ? Number(value || 0) : String(value ?? ""),
+            }
+          : r,
+      ),
+    }))
+  }
+
+  function getActiveManualRowId(groupId: string) {
+    const rows = getManualMatchRows(groupId)
+    const activeId = activeManualRowByGroup[groupId]
+    if (activeId && rows.some((r) => r.id === activeId)) return activeId
+    return rows[0]?.id ?? ""
+  }
+
+  const MANUAL_ROSTER_FIELDS: ManualRosterField[] = [
+    "team1_player1_roster_id",
+    "team1_player2_roster_id",
+    "team2_player1_roster_id",
+    "team2_player2_roster_id",
+  ]
+
+  function getNextManualEmptyField(row: ManualMatchDraftRow): ManualRosterField | null {
+    for (const key of MANUAL_ROSTER_FIELDS) {
+      if (!String(row[key] ?? "")) return key
+    }
+    return null
+  }
+
+  function setManualRosterField(row: ManualMatchDraftRow, field: ManualRosterField, value: string): ManualMatchDraftRow {
+    switch (field) {
+      case "team1_player1_roster_id":
+        return { ...row, team1_player1_roster_id: value }
+      case "team1_player2_roster_id":
+        return { ...row, team1_player2_roster_id: value }
+      case "team2_player1_roster_id":
+        return { ...row, team2_player1_roster_id: value }
+      case "team2_player2_roster_id":
+        return { ...row, team2_player2_roster_id: value }
+    }
+  }
+
+  function isManualRowComplete(row: ManualMatchDraftRow) {
+    return !!(
+      row.team1_player1_roster_id &&
+      row.team1_player2_roster_id &&
+      row.team2_player1_roster_id &&
+      row.team2_player2_roster_id
+    )
+  }
+
+  function toggleRosterIntoManualRow(groupId: string, rosterId: string) {
+    setManualMatchRows((prev) => {
+      const rows = [...(prev[groupId] ?? [])]
+      if (rows.length === 0) {
+        rows.push(makeManualMatchRow(groupId, rows))
+      }
+      const activeId = activeManualRowByGroup[groupId]
+      let activeIndex = rows.findIndex((r) => r.id === activeId)
+      if (activeIndex < 0) activeIndex = 0
+      let row = { ...rows[activeIndex] }
+
+      for (const field of MANUAL_ROSTER_FIELDS) {
+        if (row[field] === rosterId) {
+          row = setManualRosterField(row, field, "")
+          rows[activeIndex] = row
+          return { ...prev, [groupId]: rows }
+        }
+      }
+
+      const used = new Set(MANUAL_ROSTER_FIELDS.map((field) => String(row[field] ?? "")).filter(Boolean))
+      if (used.has(rosterId)) return prev
+
+      const nextField = getNextManualEmptyField(row)
+      if (!nextField) {
+        const nextRow = setManualRosterField(makeManualMatchRow(groupId, rows), "team1_player1_roster_id", rosterId)
+        rows.push(nextRow)
+        setActiveManualRowByGroup((active) => ({ ...active, [groupId]: nextRow.id }))
+        return { ...prev, [groupId]: rows }
+      }
+
+      row = setManualRosterField(row, nextField, rosterId)
+      rows[activeIndex] = row
+
+      if (isManualRowComplete(row)) {
+        const nextRow = makeManualMatchRow(groupId, rows)
+        rows.push(nextRow)
+        setActiveManualRowByGroup((active) => ({ ...active, [groupId]: nextRow.id }))
+      } else {
+        setActiveManualRowByGroup((active) => ({ ...active, [groupId]: row.id }))
+      }
+
+      return { ...prev, [groupId]: rows }
+    })
+  }
+
+  function resetManualRow(groupId: string, rowId: string) {
+    setManualMatchRows((prev) => ({
+      ...prev,
+      [groupId]: getManualMatchRows(groupId).map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              team1_player1_roster_id: "",
+              team1_player2_roster_id: "",
+              team2_player1_roster_id: "",
+              team2_player2_roster_id: "",
+            }
+          : r,
+      ),
+    }))
+    setActiveManualRowByGroup((active) => ({ ...active, [groupId]: rowId }))
+  }
+
+  function manualParticipantName(groupId: string, rosterId: string | null | undefined) {
+    if (!rosterId) return "—"
+
+    const found = getManualParticipantByRosterId(groupId, String(rosterId))
+    if (found?.display_name) return found.display_name
+
+    return String(rosterId).slice(0, 8)
+  }
+
+  async function loadManualSavedMatchesForGroup(g: GroupRow) {
+    setManualMatchLoading((prev) => ({ ...prev, [g.id]: true }))
+    try {
+      if (getManualParticipants(g.id).length === 0) {
+        await loadManualParticipantsForGroup(g)
+      }
+
+      const { data, error } = await supabase.rpc("admin_list_manual_matches_for_group", {
+        p_group_id: g.id,
+      })
+      if (error) throw error
+
+      const rows = ((data || []) as any[]).map((r) => ({
+        match_id: String(r.match_id ?? ""),
+        round_id: String(r.round_id ?? ""),
+        group_id: String(r.group_id ?? ""),
+        court_no: r.court_no ?? null,
+        slot_no: r.slot_no ?? null,
+        status: r.status ?? null,
+        score: r.score ?? null,
+        team1_player1_roster_id: r.team1_player1_roster_id ?? null,
+        team1_player2_roster_id: r.team1_player2_roster_id ?? null,
+        team2_player1_roster_id: r.team2_player1_roster_id ?? null,
+        team2_player2_roster_id: r.team2_player2_roster_id ?? null,
+        team1_label: r.team1_label ?? null,
+        team2_label: r.team2_label ?? null,
+      })) as ManualSavedMatchRow[]
+
+      setManualSavedMatches((prev) => ({ ...prev, [g.id]: rows }))
+      const nextRows =
+        rows.length > 0
+          ? rows.map((r, idx) => ({
+              id: `${g.id}-saved-${idx}`,
+              court_no: Number(r.court_no ?? 1),
+              slot_no: Number(r.slot_no ?? idx + 1),
+              team1_player1_roster_id: String(r.team1_player1_roster_id ?? ""),
+              team1_player2_roster_id: String(r.team1_player2_roster_id ?? ""),
+              team2_player1_roster_id: String(r.team2_player1_roster_id ?? ""),
+              team2_player2_roster_id: String(r.team2_player2_roster_id ?? ""),
+            }))
+          : [makeManualMatchRow(g.id)]
+
+      setManualMatchRows((prev) => ({
+        ...prev,
+        [g.id]: nextRows,
+      }))
+      setActiveManualRowByGroup((prev) => ({ ...prev, [g.id]: nextRows[0]?.id ?? "" }))
+    } catch (e: any) {
+      console.error(e)
+      alert("Erro ao listar jogos manuais do grupo: " + (e?.message || String(e)))
+    } finally {
+      setManualMatchLoading((prev) => ({ ...prev, [g.id]: false }))
+    }
+  }
+
+  async function setRoundGroupScheduleMode(g: GroupRow, mode: "auto" | "manual") {
+    const { error } = await supabase.rpc("admin_set_round_group_schedule_mode", {
+      p_group_id: g.id,
+      p_schedule_mode: mode,
+    })
+    if (error) throw error
+    setGroups((prev) => prev.map((x) => (x.id === g.id ? { ...x, schedule_mode: mode } : x)))
+  }
+
+  async function prepareManualMatchesForGroup(g: GroupRow) {
+    try {
+      setLoading(true)
+      setErr(null)
+      await setRoundGroupScheduleMode(g, "manual")
+      if (getManualParticipants(g.id).length === 0) {
+        await loadManualParticipantsForGroup(g)
+      }
+      await loadManualSavedMatchesForGroup(g)
+    } catch (e: any) {
+      setErr(e?.message || String(e))
+      alert("Erro ao preparar grupo manual: " + (e?.message || String(e)))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function clearManualMatchesForGroup(g: GroupRow, force = false) {
+    if (!confirm(`Limpar todos os jogos manuais do grupo ${g.label ?? `${g.cat_a}+${g.cat_b}`}?`)) return
+    try {
+      setManualMatchSaving((prev) => ({ ...prev, [g.id]: true }))
+      const { error } = await supabase.rpc("admin_clear_manual_matches_for_group", {
+        p_group_id: g.id,
+        p_force: force,
+      })
+      if (error) throw error
+      const nextRows = [makeManualMatchRow(g.id)]
+      setManualSavedMatches((prev) => ({ ...prev, [g.id]: [] }))
+      setManualMatchRows((prev) => ({ ...prev, [g.id]: nextRows }))
+      setActiveManualRowByGroup((prev) => ({ ...prev, [g.id]: nextRows[0].id }))
+      await loadMatches(roundId)
+    } catch (e: any) {
+      setErr(e?.message || String(e))
+      alert("Erro ao limpar jogos manuais: " + (e?.message || String(e)))
+    } finally {
+      setManualMatchSaving((prev) => ({ ...prev, [g.id]: false }))
+    }
+  }
+
+  async function saveManualMatchesForGroup(g: GroupRow) {
+    const rows = getManualMatchRows(g.id).filter(
+      (r) =>
+        r.team1_player1_roster_id ||
+        r.team1_player2_roster_id ||
+        r.team2_player1_roster_id ||
+        r.team2_player2_roster_id,
+    )
+
+    if (rows.length === 0) {
+      alert("Adicione pelo menos 1 jogo manual.")
+      return
+    }
+
+    for (const [idx, r] of rows.entries()) {
+      const ids = [
+        r.team1_player1_roster_id,
+        r.team1_player2_roster_id,
+        r.team2_player1_roster_id,
+        r.team2_player2_roster_id,
+      ]
+
+      if (ids.some((x) => !x)) {
+        alert(`Preencha os 4 jogadores na linha ${idx + 1}.`)
+        return
+      }
+
+      const uniq = new Set(ids)
+      if (uniq.size !== 4) {
+        alert(`A linha ${idx + 1} possui jogador repetido.`)
+        return
+      }
+    }
+
+    try {
+      setManualMatchSaving((prev) => ({ ...prev, [g.id]: true }))
+      setErr(null)
+      setMsg(null)
+
+      await setRoundGroupScheduleMode(g, "manual")
+
+      const payload = rows.map((r) => ({
+        court_no: Number(r.court_no || 0),
+        slot_no: Number(r.slot_no || 0),
+        team1_player1_roster_id: r.team1_player1_roster_id,
+        team1_player2_roster_id: r.team1_player2_roster_id,
+        team2_player1_roster_id: r.team2_player1_roster_id,
+        team2_player2_roster_id: r.team2_player2_roster_id,
+      }))
+
+      const { error } = await supabase.rpc("admin_save_manual_matches_for_group", {
+        p_group_id: g.id,
+        p_matches: payload,
+        p_replace_existing: true,
+        p_force_clear: false,
+      })
+      if (error) throw error
+
+      await loadManualParticipantsForGroup(g)
+      await loadManualSavedMatchesForGroup(g)
+      await loadMatches(roundId)
+
+      setMsg(`Jogos manuais salvos no grupo ${g.label ?? `${g.cat_a}+${g.cat_b}`}.`)
+    } catch (e: any) {
+      setErr(e?.message || String(e))
+      alert("Erro ao salvar jogos manuais: " + (e?.message || String(e)))
+    } finally {
+      setManualMatchSaving((prev) => ({ ...prev, [g.id]: false }))
+    }
+  }
+
   async function saveManualPairsToRoundPairs(g: GroupRow) {
     if (!roundId) {
       alert("Selecione uma rodada.")
@@ -1553,7 +1946,7 @@ export default function AdminRounds() {
 
     const { data, error } = await supabase
       .from("round_groups")
-      .select("id,round_id,label,cat_a,cat_b,sort_order,court_from,court_to,score_target")
+      .select("id,round_id,label,cat_a,cat_b,sort_order,court_from,court_to,score_target,schedule_mode")
       .eq("round_id", pRoundId)
       .order("sort_order", { ascending: true })
 
@@ -1571,6 +1964,8 @@ export default function AdminRounds() {
     setManualDrafts(emptyDrafts)
     setManualParticipants({})
     setManualPairs({})
+    setManualMatchRows({})
+    setManualSavedMatches({})
   }
 
   async function loadPendingReports(pRoundId: string) {
@@ -2388,6 +2783,9 @@ export default function AdminRounds() {
                   const courtsTxt = g.court_from && g.court_to ? `${g.court_from}-${g.court_to}` : "-"
                   const isFixedPairsRound = roundModeNormalized === "fixed_pairs"
                   const isAmericanoCatRound = roundModeNormalized === "americanocat"
+                  const isAmericanoRound = roundModeNormalized === "americano"
+                  const manualScheduleRound = isAmericanoRound || isAmericanoCatRound
+                  const scheduleMode = getGroupScheduleMode(g)
 
                   const a = c?.a ?? 0
                   const b = c?.b ?? 0
@@ -2468,7 +2866,7 @@ export default function AdminRounds() {
                             </div>
                           )}
 
-                          {isAmericanoCatRound && (
+                          {isAmericanoCatRound && scheduleMode === "auto" && (
                             <>
                               <div className="flex flex-wrap gap-2">
                                 <button
@@ -2556,7 +2954,39 @@ export default function AdminRounds() {
                             </div>
                           )}
 
-                          {!isAmericanoCatRound && (!isFixedPairsRound || pairingMode === "auto") && (
+                          {manualScheduleRound && (
+                            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                              <div className="text-xs text-slate-300 mb-2">Modo de geração dos jogos</div>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className={scheduleMode === "auto" ? "btn-primary" : "btn-ghost"}
+                                  onClick={async () => {
+                                    try {
+                                      setLoading(true)
+                                      await setRoundGroupScheduleMode(g, "auto")
+                                    } catch (e: any) {
+                                      setErr(e?.message || String(e))
+                                      alert("Erro ao mudar para automático: " + (e?.message || String(e)))
+                                    } finally {
+                                      setLoading(false)
+                                    }
+                                  }}
+                                >
+                                  Automático
+                                </button>
+                                <button
+                                  type="button"
+                                  className={scheduleMode === "manual" ? "btn-primary" : "btn-ghost"}
+                                  onClick={() => prepareManualMatchesForGroup(g)}
+                                >
+                                  Manual
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {!isAmericanoCatRound && (!isFixedPairsRound || pairingMode === "auto") && (!manualScheduleRound || scheduleMode === "auto") && (
                             <>
                               <div className="flex flex-wrap gap-2">
                                 <button
@@ -2951,6 +3381,155 @@ export default function AdminRounds() {
                                 Esta versão salva as duplas manuais diretamente em{" "}
                                 <span className="font-mono">round_pairs</span> usando os participantes do{" "}
                                 <span className="font-mono">stage_roster</span>.
+                              </div>
+                            </div>
+                          )}
+
+                          {manualScheduleRound && scheduleMode === "manual" && (
+                            <div className="space-y-3 rounded-2xl border border-fuchsia-500/20 bg-fuchsia-500/5 p-4">
+                              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-extrabold">Montagem manual dos jogos</div>
+                                  <div className="text-xs text-slate-300">
+                                    Clique nos cards dos atletas para preencher a linha ativa. Quando fechar os 4 nomes, a próxima linha é criada automaticamente.
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button type="button" className="btn-ghost" onClick={() => loadManualParticipantsForGroup(g)} disabled={loading || manualLoading[g.id]}>
+                                    {manualLoading[g.id] ? "Carregando atletas..." : "Carregar atletas"}
+                                  </button>
+                                  <button type="button" className="btn-ghost" onClick={() => loadManualSavedMatchesForGroup(g)} disabled={loading || manualMatchLoading[g.id]}>
+                                    {manualMatchLoading[g.id] ? "Carregando jogos..." : "Carregar jogos"}
+                                  </button>
+                                  <button type="button" className="btn-primary" onClick={() => addManualMatchRow(g.id)} disabled={loading}>
+                                    Adicionar jogo
+                                  </button>
+                                  <button type="button" className="btn-primary" onClick={() => saveManualMatchesForGroup(g)} disabled={loading || manualMatchSaving[g.id]}>
+                                    {manualMatchSaving[g.id] ? "Salvando..." : "Salvar jogos"}
+                                  </button>
+                                  <button type="button" className="btn-ghost" onClick={() => clearManualMatchesForGroup(g)} disabled={loading || manualMatchSaving[g.id]}>
+                                    Limpar jogos
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1.2fr] gap-3">
+                                <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                  <div className="flex items-center justify-between gap-2 mb-2">
+                                    <div className="text-sm font-semibold">Atletas elegíveis</div>
+                                    <div className="text-xs text-slate-400">Clique no card para lançar na linha ativa</div>
+                                  </div>
+                                  {manualRoster.length === 0 ? (
+                                    <div className="text-sm text-slate-400">Carregue os atletas do grupo.</div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[520px] overflow-auto pr-1">
+                                      {manualRoster.map((p) => {
+                                        const activeRowId = getActiveManualRowId(g.id)
+                                        const activeRow = getManualMatchRows(g.id).find((row) => row.id === activeRowId)
+                                        const activeFields = activeRow
+                                          ? [
+                                              activeRow.team1_player1_roster_id,
+                                              activeRow.team1_player2_roster_id,
+                                              activeRow.team2_player1_roster_id,
+                                              activeRow.team2_player2_roster_id,
+                                            ]
+                                          : []
+                                        const selected = activeFields.includes(p.roster_id)
+                                        return (
+                                          <button
+                                            key={p.roster_id}
+                                            type="button"
+                                            className={selected ? "w-full rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-3 text-left" : "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left hover:bg-white/10"}
+                                            onClick={() => toggleRosterIntoManualRow(g.id, p.roster_id)}
+                                          >
+                                            <div className="font-semibold">{p.display_name}</div>
+                                            <div className="text-xs text-slate-400">{kindBadge(p.kind)} • Cat {p.category}</div>
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="space-y-3">
+                                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                      <div className="text-sm font-semibold">Jogos montados</div>
+                                      <div className="text-xs text-slate-400">Clique no card do jogo para deixá-lo ativo</div>
+                                    </div>
+                                    {getManualMatchRows(g.id).length === 0 ? (
+                                      <div className="text-sm text-slate-400">Nenhum jogo manual montado.</div>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        {getManualMatchRows(g.id).map((row, idx) => {
+                                          const active = getActiveManualRowId(g.id) === row.id
+                                          return (
+                                            <button
+                                              key={row.id}
+                                              type="button"
+                                              className={active ? "w-full rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 p-3 text-left" : "w-full rounded-xl border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"}
+                                              onClick={() => setActiveManualRowByGroup((prev) => ({ ...prev, [g.id]: row.id }))}
+                                            >
+                                              <div className="flex items-center justify-between gap-3 mb-3">
+                                                <div>
+                                                  <div className="text-sm font-bold">Jogo #{idx + 1}</div>
+                                                  <div className="text-xs text-slate-400">{active ? "Linha ativa" : "Clique para editar"}</div>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                  <button type="button" className="btn-ghost" onClick={(e) => { e.stopPropagation(); resetManualRow(g.id, row.id) }}>Limpar</button>
+                                                  <button type="button" className="btn-ghost" onClick={(e) => { e.stopPropagation(); removeManualMatchRow(g.id, row.id) }}>Remover</button>
+                                                </div>
+                                              </div>
+                                              <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                                                <div>
+                                                  <div className="text-xs text-slate-300 mb-1">Quadra</div>
+                                                  <input className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" value={row.court_no} inputMode="numeric" onClick={(e) => e.stopPropagation()} onChange={(e) => updateManualMatchRow(g.id, row.id, "court_no", Number(e.target.value || 0))} />
+                                                </div>
+                                                <div>
+                                                  <div className="text-xs text-slate-300 mb-1">Slot</div>
+                                                  <input className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" value={row.slot_no} inputMode="numeric" onClick={(e) => e.stopPropagation()} onChange={(e) => updateManualMatchRow(g.id, row.id, "slot_no", Number(e.target.value || 0))} />
+                                                </div>
+                                                {([
+                                                  ["team1_player1_roster_id", "T1 • Jogador 1"],
+                                                  ["team1_player2_roster_id", "T1 • Jogador 2"],
+                                                  ["team2_player1_roster_id", "T2 • Jogador 1"],
+                                                  ["team2_player2_roster_id", "T2 • Jogador 2"],
+                                                ] as Array<[keyof ManualMatchDraftRow, string]>).map(([field, text]) => (
+                                                  <div key={field}>
+                                                    <div className="text-xs text-slate-300 mb-1">{text}</div>
+                                                    <div className="min-h-[42px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm flex items-center">
+                                                      {manualParticipantName(g.id, String(row[field] ?? ""))}
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </button>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                    <div className="text-sm font-semibold mb-2">Jogos salvos no grupo</div>
+                                    {getManualSavedRows(g.id).length === 0 ? (
+                                      <div className="text-sm text-slate-400">Nenhum jogo salvo ainda.</div>
+                                    ) : (
+                                      <div className="space-y-2 max-h-[220px] overflow-auto pr-1">
+                                        {getManualSavedRows(g.id).map((m) => (
+                                          <div key={m.match_id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                                            <div className="text-xs text-slate-400">Quadra {m.court_no ?? "-"} • Slot {m.slot_no ?? "-"} • Status {m.status ?? "-"}</div>
+                                            <div className="font-semibold">
+                                              {manualParticipantName(g.id, m.team1_player1_roster_id)} + {manualParticipantName(g.id, m.team1_player2_roster_id)}
+                                              <span className="text-slate-400"> x </span>
+                                              {manualParticipantName(g.id, m.team2_player1_roster_id)} + {manualParticipantName(g.id, m.team2_player2_roster_id)}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           )}
