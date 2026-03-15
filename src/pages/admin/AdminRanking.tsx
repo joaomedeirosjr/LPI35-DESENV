@@ -835,7 +835,6 @@ export default function AdminRanking() {
       }
 
       if (!stageClassificationRows.length) return null;
-      const totalMatches = stageClassificationRows.reduce((acc, r) => acc + (r.matches_played ?? 0), 0);
       const totalGuests = stageClassificationRows.filter((r) => r.kind === "guest").length;
       const totalBonus = stageClassificationRows.reduce((acc, r) => acc + (r.bonus_less_games ?? 0), 0);
       return [
