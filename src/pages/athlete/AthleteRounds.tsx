@@ -68,6 +68,73 @@ function isValidAmericanoCatScore(s1: number, s2: number, target: number) {
   return Number.isFinite(s1) && Number.isFinite(s2) && s1 >= 0 && s2 >= 0 && s1 + s2 === target
 }
 
+function normalizeName(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function buildNameNeedles(fullName: string | null | undefined) {
+  const normalized = normalizeName(fullName)
+  if (!normalized) return [] as string[]
+
+  const parts = normalized.split(" ").filter(Boolean)
+  const out = new Set<string>()
+  out.add(normalized)
+
+  if (parts.length >= 2) {
+    out.add(`${parts[0]} ${parts[parts.length - 1]}`)
+  }
+
+  if (parts.length >= 3) {
+    out.add(`${parts[0]} ${parts[1]} ${parts[parts.length - 1]}`)
+  }
+
+  if (parts.length === 1) out.add(parts[0])
+
+  return Array.from(out).filter(Boolean).sort((a, b) => b.length - a.length)
+}
+
+function labelMatchesMe(label: string | null | undefined, fullName: string | null | undefined) {
+  const hay = normalizeName(label)
+  if (!hay) return false
+  const needles = buildNameNeedles(fullName)
+  return needles.some((needle) => hay.includes(needle))
+}
+
+function getMySide(match: Pick<MatchRow, "team1_label" | "team2_label">, fullName: string | null | undefined) {
+  const inTeam1 = labelMatchesMe(match.team1_label, fullName)
+  const inTeam2 = labelMatchesMe(match.team2_label, fullName)
+
+  if (inTeam1 && !inTeam2) return 1 as const
+  if (inTeam2 && !inTeam1) return 2 as const
+  return 1 as const
+}
+
+function perspectiveLabel(match: Pick<MatchRow, "team1_label" | "team2_label">, fullName: string | null | undefined, kind: "mine" | "opp") {
+  const mySide = getMySide(match, fullName)
+  if (kind === "mine") return mySide === 1 ? match.team1_label : match.team2_label
+  return mySide === 1 ? match.team2_label : match.team1_label
+}
+
+function perspectiveScore(score: any, mySide: 1 | 2) {
+  const s = score ?? {}
+  const a = s?.games_team1
+  const b = s?.games_team2
+  if (typeof a !== "number" || typeof b !== "number") return { mine: null, opp: null }
+  return mySide === 1 ? { mine: a, opp: b } : { mine: b, opp: a }
+}
+
+function fmtPerspectiveScore(score: any, mySide: 1 | 2): string {
+  const v = perspectiveScore(score, mySide)
+  if (typeof v.mine === "number" && typeof v.opp === "number") return `${v.mine} x ${v.opp}`
+  return "-"
+}
+
+
 export default function AthleteRounds() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -76,6 +143,7 @@ export default function AthleteRounds() {
   const [pending, setPending] = useState<PendingRow[]>([])
 
   const [me, setMe] = useState<string | null>(null)
+  const [meName, setMeName] = useState<string | null>(null)
 
   const [editing, setEditing] = useState<MatchRow | null>(null)
   const [t1, setT1] = useState<string>("")
@@ -144,7 +212,19 @@ export default function AthleteRounds() {
     setError(null)
 
     const { data: auth } = await supabase.auth.getUser()
-    setMe(auth.user?.id ?? null)
+    const userId = auth.user?.id ?? null
+    setMe(userId)
+
+    if (userId) {
+      const profileRes = await supabase
+        .from("profiles")
+        .select("nome")
+        .eq("id", userId)
+        .single()
+      setMeName((profileRes.data as any)?.nome ?? null)
+    } else {
+      setMeName(null)
+    }
 
     const resMatches = await supabase.rpc("athlete_list_my_matches", { p_round_id: null })
     if (resMatches.error) {
@@ -181,9 +261,10 @@ export default function AthleteRounds() {
     }
 
     setEditing(m)
-    const s = m.score ?? {}
-    setT1(typeof s?.games_team1 === "number" ? String(s.games_team1) : "")
-    setT2(typeof s?.games_team2 === "number" ? String(s.games_team2) : "")
+    const mySide = getMySide(m, meName)
+    const s = perspectiveScore(m.score, mySide)
+    setT1(typeof s.mine === "number" ? String(s.mine) : "")
+    setT2(typeof s.opp === "number" ? String(s.opp) : "")
   }
 
   async function submitReport() {
@@ -214,12 +295,16 @@ export default function AthleteRounds() {
       return
     }
 
+    const mySide = getMySide(editing, meName)
+    const team1Score = mySide === 1 ? n1 : n2
+    const team2Score = mySide === 1 ? n2 : n1
+
     setError(null)
 
     const { error } = await supabase.rpc("athlete_report_score", {
       p_match_id: editing.match_id,
-      p_games_team1: n1,
-      p_games_team2: n2,
+      p_games_team1: team1Score,
+      p_games_team2: team2Score,
     })
 
     if (error) {
@@ -364,8 +449,11 @@ export default function AthleteRounds() {
             const showConfirm = pendFromOther.length > 0
             const showLaunch = !waitingMyReport && !showConfirm
 
-            const scoreLabel = fmtScore(m.score)
+            const mySide = getMySide(m, meName)
+            const scoreLabel = fmtPerspectiveScore(m.score, mySide)
             const headerRight = scoreLabel !== "-" ? scoreLabel : "—"
+            const myTeamLabel = perspectiveLabel(m, meName, "mine")
+            const oppTeamLabel = perspectiveLabel(m, meName, "opp")
 
             return (
               <div key={m.match_id} className="card">
@@ -386,11 +474,11 @@ export default function AthleteRounds() {
                     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div className="rounded-2xl border border-white/10 bg-[#0f172a] p-3">
                         <div className="text-[11px] text-white/60">Minha dupla</div>
-                        <div className="font-extrabold break-words">{m.team1_label ?? "-"}</div>
+                        <div className="font-extrabold break-words">{myTeamLabel ?? "-"}</div>
                       </div>
                       <div className="rounded-2xl border border-white/10 bg-[#0f172a] p-3">
                         <div className="text-[11px] text-white/60">Adversários</div>
-                        <div className="font-extrabold break-words">{m.team2_label ?? "-"}</div>
+                        <div className="font-extrabold break-words">{oppTeamLabel ?? "-"}</div>
                       </div>
                     </div>
                   </div>
@@ -447,7 +535,7 @@ export default function AthleteRounds() {
 
                     {showConfirm && (
                       <div className="mt-2 text-[11px] text-white/60">
-                        Pendente: <b>{fmtScore(pendFromOther[0].score)}</b> (por{" "}
+                        Pendente: <b>{fmtPerspectiveScore(pendFromOther[0].score, mySide)}</b> (por{" "}
                         {pendFromOther[0].reported_name ?? "adversário"})
                       </div>
                     )}
@@ -466,7 +554,7 @@ export default function AthleteRounds() {
               <div>
                 <div className="text-lg font-extrabold">Lançar placar</div>
                 <div className="text-xs text-slate-300 mt-0.5">
-                  {editing.team1_label ?? "Time 1"} vs {editing.team2_label ?? "Time 2"} • Quadra{" "}
+                  {perspectiveLabel(editing, meName, "mine") ?? "Minha dupla"} vs {perspectiveLabel(editing, meName, "opp") ?? "Adversários"} • Quadra{" "}
                   {editing.court_no} • Ordem {editing.slot_no}
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
