@@ -1603,25 +1603,14 @@ export default function AdminRounds() {
 
   function manualParticipantName(groupId: string, rosterId: string | null | undefined) {
     if (!rosterId) return "—"
-
-    const found = getManualParticipantByRosterId(groupId, String(rosterId))
-    if (found?.display_name) return found.display_name
-
-    return String(rosterId).slice(0, 8)
+    return getManualParticipantByRosterId(groupId, String(rosterId))?.display_name ?? String(rosterId).slice(0, 8)
   }
 
   async function loadManualSavedMatchesForGroup(g: GroupRow) {
     setManualMatchLoading((prev) => ({ ...prev, [g.id]: true }))
     try {
-      if (getManualParticipants(g.id).length === 0) {
-        await loadManualParticipantsForGroup(g)
-      }
-
-      const { data, error } = await supabase.rpc("admin_list_manual_matches_for_group", {
-        p_group_id: g.id,
-      })
+      const { data, error } = await supabase.rpc("admin_list_manual_matches_for_group", { p_group_id: g.id })
       if (error) throw error
-
       const rows = ((data || []) as any[]).map((r) => ({
         match_id: String(r.match_id ?? ""),
         round_id: String(r.round_id ?? ""),
@@ -1639,19 +1628,17 @@ export default function AdminRounds() {
       })) as ManualSavedMatchRow[]
 
       setManualSavedMatches((prev) => ({ ...prev, [g.id]: rows }))
-      const nextRows =
-        rows.length > 0
-          ? rows.map((r, idx) => ({
-              id: `${g.id}-saved-${idx}`,
-              court_no: Number(r.court_no ?? 1),
-              slot_no: Number(r.slot_no ?? idx + 1),
-              team1_player1_roster_id: String(r.team1_player1_roster_id ?? ""),
-              team1_player2_roster_id: String(r.team1_player2_roster_id ?? ""),
-              team2_player1_roster_id: String(r.team2_player1_roster_id ?? ""),
-              team2_player2_roster_id: String(r.team2_player2_roster_id ?? ""),
-            }))
-          : [makeManualMatchRow(g.id)]
-
+      const nextRows = rows.length > 0
+        ? rows.map((r, idx) => ({
+            id: `${g.id}-saved-${idx}`,
+            court_no: Number(r.court_no ?? 1),
+            slot_no: Number(r.slot_no ?? idx + 1),
+            team1_player1_roster_id: String(r.team1_player1_roster_id ?? ""),
+            team1_player2_roster_id: String(r.team1_player2_roster_id ?? ""),
+            team2_player1_roster_id: String(r.team2_player1_roster_id ?? ""),
+            team2_player2_roster_id: String(r.team2_player2_roster_id ?? ""),
+          }))
+        : [makeManualMatchRow(g.id)]
       setManualMatchRows((prev) => ({
         ...prev,
         [g.id]: nextRows,
@@ -1714,13 +1701,8 @@ export default function AdminRounds() {
   }
 
   async function saveManualMatchesForGroup(g: GroupRow) {
-    const rows = getManualMatchRows(g.id).filter(
-      (r) =>
-        r.team1_player1_roster_id ||
-        r.team1_player2_roster_id ||
-        r.team2_player1_roster_id ||
-        r.team2_player2_roster_id,
-    )
+    const rows = getManualMatchRows(g.id)
+      .filter((r) => r.team1_player1_roster_id || r.team1_player2_roster_id || r.team2_player1_roster_id || r.team2_player2_roster_id)
 
     if (rows.length === 0) {
       alert("Adicione pelo menos 1 jogo manual.")
@@ -1728,18 +1710,11 @@ export default function AdminRounds() {
     }
 
     for (const [idx, r] of rows.entries()) {
-      const ids = [
-        r.team1_player1_roster_id,
-        r.team1_player2_roster_id,
-        r.team2_player1_roster_id,
-        r.team2_player2_roster_id,
-      ]
-
+      const ids = [r.team1_player1_roster_id, r.team1_player2_roster_id, r.team2_player1_roster_id, r.team2_player2_roster_id]
       if (ids.some((x) => !x)) {
         alert(`Preencha os 4 jogadores na linha ${idx + 1}.`)
         return
       }
-
       const uniq = new Set(ids)
       if (uniq.size !== 4) {
         alert(`A linha ${idx + 1} possui jogador repetido.`)
@@ -1750,10 +1725,7 @@ export default function AdminRounds() {
     try {
       setManualMatchSaving((prev) => ({ ...prev, [g.id]: true }))
       setErr(null)
-      setMsg(null)
-
       await setRoundGroupScheduleMode(g, "manual")
-
       const payload = rows.map((r) => ({
         court_no: Number(r.court_no || 0),
         slot_no: Number(r.slot_no || 0),
@@ -1762,7 +1734,6 @@ export default function AdminRounds() {
         team2_player1_roster_id: r.team2_player1_roster_id,
         team2_player2_roster_id: r.team2_player2_roster_id,
       }))
-
       const { error } = await supabase.rpc("admin_save_manual_matches_for_group", {
         p_group_id: g.id,
         p_matches: payload,
@@ -1770,11 +1741,8 @@ export default function AdminRounds() {
         p_force_clear: false,
       })
       if (error) throw error
-
-      await loadManualParticipantsForGroup(g)
       await loadManualSavedMatchesForGroup(g)
       await loadMatches(roundId)
-
       setMsg(`Jogos manuais salvos no grupo ${g.label ?? `${g.cat_a}+${g.cat_b}`}.`)
     } catch (e: any) {
       setErr(e?.message || String(e))
@@ -2604,7 +2572,7 @@ export default function AdminRounds() {
         </div>
 
         {tab === "config" && (
-          <div className="card space-y-4">
+          <div className={`card space-y-4 ${isStageFinished ? "pointer-events-none opacity-70" : ""}`}>
             <div className="rounded-xl border border-white/10 bg-white/5 p-4">
               <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 no-print">
                 <div>
@@ -2746,7 +2714,7 @@ export default function AdminRounds() {
         )}
 
         {tab === "gen" && (
-          <div className="card space-y-4">
+          <div className={`card space-y-4 ${isStageFinished ? "pointer-events-none opacity-70" : ""}`}>
             <div>
               <div className="text-lg font-extrabold">Geração</div>
               <div className="text-sm text-slate-300">
@@ -3705,7 +3673,7 @@ export default function AdminRounds() {
         )}
 
         {tab === "online" && (
-          <div className="card space-y-4">
+          <div className={`card space-y-4 ${isStageFinished ? "pointer-events-none opacity-70" : ""}`}>
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
               <div>
                 <div className="text-lg font-extrabold">Lançamento de Resultados (On-line)</div>
