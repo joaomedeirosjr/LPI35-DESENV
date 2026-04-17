@@ -372,7 +372,12 @@ export default function AdminStageParticipants() {
                 </div>
 
                 <div className='mt-3 overflow-x-auto'>
-                  <table className='w-full text-sm'>
+                  <table className='w-full table-fixed text-sm'>
+                    <colgroup>
+                      <col className='w-[22%]' />
+                      <col className='w-[48%]' />
+                      <col className='w-[30%]' />
+                    </colgroup>
                     <thead>
                       <tr className='text-slate-300'>
                         <th className='text-left py-2 pr-3'>Tipo</th>
